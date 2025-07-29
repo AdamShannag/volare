@@ -21,6 +21,7 @@ type Option func(*Fetcher)
 type Fetcher struct {
 	client     *http.Client
 	downloader downloader.Downloader
+	baseURL    string
 }
 
 func WithHTTPClient(client *http.Client) Option {
@@ -29,9 +30,16 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
+func WithBaseURL(baseURL string) Option {
+	return func(f *Fetcher) {
+		f.baseURL = baseURL
+	}
+}
+
 func NewFetcher(downloader downloader.Downloader, opts ...Option) fetcher.Fetcher {
 	h := &Fetcher{
-		client: http.DefaultClient,
+		client:  http.DefaultClient,
+		baseURL: "https://api.github.com",
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -98,7 +106,8 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 }
 
 func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]githubItem, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1",
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1",
+		f.baseURL,
 		url.PathEscape(ghOpts.Owner),
 		url.PathEscape(ghOpts.Repo),
 		url.PathEscape(ghOpts.Ref),
@@ -119,8 +128,8 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]
 		return nil, fmt.Errorf("failed to list GitHub tree: %w", err)
 	}
 	defer func() {
-		if err = resp.Body.Close(); err != nil {
-			slog.Warn("error closing response body", "error", err)
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Warn("error closing response body", "error", cerr)
 		}
 	}()
 
