@@ -1,0 +1,118 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  # name must match the spec fields below, and be in the form: <plural>.<group>
+  name: volarepopulators.k8s.volare.dev
+spec:
+  # group name to use for REST API: /apis/<group>/<version>
+  group: k8s.volare.dev
+  # list of versions supported by this CustomResourceDefinition
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: object
+                    required: [ type, targetPath ]
+                    properties:
+                      type:
+                        type: string
+                        enum: [ "http", "gitlab", "github", "s3" ]
+                      targetPath:
+                        type: string
+
+                      # HTTP options
+                      http:
+                        type: object
+                        properties:
+                          uri:
+                            type: string
+                            format: uri
+                          headers:
+                            type: object
+                            additionalProperties:
+                              type: string
+
+                      # GitLab options
+                      gitlab:
+                        type: object
+                        properties:
+                          host:
+                            type: string
+                          project:
+                            type: string
+                          ref:
+                            type: string
+                          path:
+                            type: string
+                          token:
+                            type: string
+                          workers:
+                            type: integer
+
+                      # GitHub options
+                      github:
+                        type: object
+                        properties:
+                          owner:
+                            type: string
+                          repo:
+                            type: string
+                          ref:
+                            type: string
+                          path:
+                            type: string
+                          token:
+                            type: string
+                          workers:
+                            type: integer
+
+                      # S3 options
+                      s3:
+                        type: object
+                        properties:
+                          endpoint:
+                            type: string
+                          secure:
+                            type: boolean
+                          bucket:
+                            type: string
+                          paths:
+                            type: array
+                            items:
+                              type: string
+                          region:
+                            type: string
+                          accessKeyId:
+                            type: string
+                          secretAccessKey:
+                            type: string
+                          sessionToken:
+                            type: string
+                          workers:
+                            type: integer
+
+                workers:
+                  type: integer
+
+  # either Namespaced or Cluster
+  scope: Namespaced
+  names:
+    # plural name to be used in the URL: /apis/<group>/<version>/<plural>
+    plural: volarepopulators
+    # singular name to be used as an alias on the CLI and for display
+    singular: volarepopulator
+    # kind is normally the CamelCased singular type. Your resource manifests use this.
+    kind: VolarePopulator
+    # shortNames allow shorter string to match your resource on the CLI
+    shortNames:
+      - vp

@@ -1,0 +1,7 @@
+apiVersion: populator.storage.k8s.io/v1beta1
+kind: VolumePopulator
+metadata:
+  name: vp
+sourceKind:
+  group: k8s.volare.dev
+  kind: VolarePopulator

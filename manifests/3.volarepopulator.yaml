@@ -1,0 +1,53 @@
+apiVersion: k8s.volare.dev/v1alpha1
+kind: VolarePopulator
+metadata:
+  name: volare-populator
+spec:
+  sources:
+    - type: http
+      targetPath: docs # relative path to the mountPath
+      http:
+        uri: https://raw.githubusercontent.com/AdamShannag/umami-client/refs/heads/main/README.MD
+        # Downloads the README.md file and stores it under the "docs" directory
+
+    - type: http
+      targetPath: docs/hookah.md # relative path to the mountPath
+      http:
+        uri: https://raw.githubusercontent.com/AdamShannag/hookah/refs/heads/main/README.md
+        # Downloads the README.md file and saves it as "hookah.md" inside "docs/"
+
+#    - type: gitlab
+#      targetPath: integrations # relative path to the mountPath
+#      gitlab:
+#        host: https://gitlab.com
+#        project: gorup/my-project
+#        ref: master
+#        path: integration/testutils  # Can be a directory or a specific file to download
+#        token: secret-token          # Required if the repository is private
+#        workers: 2                   # Optional, defaults to 2 concurrent workers
+#
+    - type: github
+      targetPath: /github # relative path to the mountPath
+      github:
+        owner: kubernetes-csi
+        repo: lib-volume-populator
+        ref: master
+        path: example               # Can be a directory or a specific file to download
+        # token: secret-token       # Optional, only needed for private repositories
+        workers: 2                  # Optional, defaults to 2 concurrent workers
+#
+#    - type: s3
+#      targetPath: /s3 # relative path to the mountPath
+#      s3:
+#        endpoint: fra1.digitaloceanspaces.com
+#        secure: true
+#        bucket: bucket-name
+#        region: us-east-1 # Optional
+#        accessKeyId: access-key-id
+#        secretAccessKey: secret
+#        paths:
+#          - backups/               # Downloads all files under the "backups/" directory
+#          - images/image1.png      # Downloads only the specific file "image1.png"
+#        workers: 3                 # Optional, defaults to 2 concurrent workers
+
+  workers: 2  # Optional, sets the global number of concurrent source workers (defaults to 2)

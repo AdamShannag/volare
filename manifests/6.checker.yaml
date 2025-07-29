@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx
+  name: nginx
+spec:
+  volumes:
+    - name: defaultvolume
+      persistentVolumeClaim:
+        claimName: myclaim
+  containers:
+    - image: nginx
+      name: nginx
+      resources: {}
+      volumeMounts:
+        - name: defaultvolume
+          mountPath: /mnt/checker
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
