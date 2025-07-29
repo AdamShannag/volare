@@ -77,14 +77,15 @@ spec:
         repo: lib-volume-populator
         ref: master
         path: example
+        token: GITHUB_TOKEN # Read from env if set, otherwise used as a raw string
     - type: s3
       targetPath: /s3
       s3:
         endpoint: s3.example.com
         bucket: data-bucket
         region: us-east-1
-        accessKeyId: AWS_ACCESS_KEY
-        secretAccessKey: AWS_SECRET_KEY
+        accessKeyId: AWS_ACCESS_KEY # Read from env if set, otherwise used as a raw string
+        secretAccessKey: AWS_SECRET_KEY # Read from env if set, otherwise used as a raw string
         secure: true
         paths:
           - data/
