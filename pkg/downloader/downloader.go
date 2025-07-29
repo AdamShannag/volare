@@ -51,8 +51,8 @@ func (d *HTTPDownloader) Download(ctx context.Context, url string, headers map[s
 		return fmt.Errorf("failed to fetch %q: %w", url, err)
 	}
 	defer func() {
-		if err = resp.Body.Close(); err != nil {
-			slog.Warn("error closing response body", "error", err)
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Warn("error closing response body", "error", cerr)
 		}
 	}()
 
@@ -70,8 +70,8 @@ func (d *HTTPDownloader) Download(ctx context.Context, url string, headers map[s
 	}
 
 	defer func() {
-		if err = outFile.Close(); err != nil {
-			slog.Warn("error closing file", "error", err)
+		if cerr := outFile.Close(); cerr != nil {
+			slog.Warn("error closing file", "error", cerr)
 		}
 	}()
 
