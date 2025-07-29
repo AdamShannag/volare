@@ -77,7 +77,8 @@ spec:
         repo: lib-volume-populator
         ref: master
         path: example
-        token: GITHUB_TOKEN # Read from env if set, otherwise used as a raw string
+        # public repo       
+        # token: GITHUB_TOKEN # Read from env if set, otherwise used as a raw string
     - type: s3
       targetPath: /s3
       s3:
