@@ -7,6 +7,7 @@ import (
 	"github.com/AdamShannag/volare/pkg/downloader"
 	"github.com/AdamShannag/volare/pkg/fetcher"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"github.com/AdamShannag/volare/pkg/workerpool"
 	"log/slog"
 	"net/http"
@@ -109,7 +110,7 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	if gitlabOpts.Token != "" {
-		req.Header.Add(gitlabTokenHeader, gitlabOpts.Token)
+		req.Header.Add(gitlabTokenHeader, utils.FromEnv(gitlabOpts.Token))
 	}
 
 	resp, err := f.client.Do(req)
@@ -146,7 +147,7 @@ func (f *Fetcher) downloadBlob(ctx context.Context, mountPath, filePath string, 
 
 	headers := map[string]string{}
 	if src.Token != "" {
-		headers[gitlabTokenHeader] = src.Token
+		headers[gitlabTokenHeader] = utils.FromEnv(src.Token)
 	}
 
 	fullPath := filepath.Join(mountPath, filePath)

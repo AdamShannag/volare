@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/AdamShannag/volare/pkg/fetcher"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"github.com/AdamShannag/volare/pkg/workerpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -137,7 +138,7 @@ func downloadObject(ctx context.Context, client Client, mountPath, bucket, key s
 
 func MinioClientFactory(opts types.S3Options) (Client, error) {
 	return minio.New(opts.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(opts.AccessKeyID, opts.SecretAccessKey, opts.SessionToken),
+		Creds:  credentials.NewStaticV4(utils.FromEnv(opts.AccessKeyID), utils.FromEnv(opts.SecretAccessKey), utils.FromEnv(opts.SessionToken)),
 		Secure: opts.Secure,
 		Region: opts.Region,
 	})

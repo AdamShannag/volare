@@ -7,6 +7,7 @@ import (
 	"github.com/AdamShannag/volare/pkg/downloader"
 	"github.com/AdamShannag/volare/pkg/fetcher"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"github.com/AdamShannag/volare/pkg/workerpool"
 	"log/slog"
 	"net/http"
@@ -110,7 +111,7 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	if ghOpts.Token != "" {
-		req.Header.Add("Authorization", "Bearer "+ghOpts.Token)
+		req.Header.Add("Authorization", "Bearer "+utils.FromEnv(ghOpts.Token))
 	}
 
 	resp, err := f.client.Do(req)
@@ -158,7 +159,7 @@ func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, item githu
 
 	headers := map[string]string{}
 	if ghOpts.Token != "" {
-		headers["Authorization"] = "Bearer " + ghOpts.Token
+		headers["Authorization"] = "Bearer " + utils.FromEnv(ghOpts.Token)
 	}
 
 	fullPath := filepath.Join(mountPath, item.Path)

@@ -1,14 +1,29 @@
-# Volare
+<p align="center">
+  <img src="assets/volare.png" alt="Volare logo" width="462" />
+</p>
 
-Volare is a Kubernetes volume populator that populates Persistent Volume Claims (PVCs) from multiple external sources
-concurrently.
+<p align="center">
+  <a href="https://github.com/AdamShannag/volare/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/AdamShannag/volare/build.yml?branch=master&label=CI%2FCD&logo=github" alt="CI/CD">
+  </a>
+  <a href="https://github.com/AdamShannag/volare/blob/master/go.mod">
+    <img src="https://img.shields.io/github/go-mod/go-version/AdamShannag/volare?logo=go" alt="Go Version">
+  </a>
+  <a href="https://github.com/AdamShannag/volare/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/AdamShannag/volare/build.yml?branch=master&label=Trivy%20Security%20Scan&logo=aquasec" alt="Trivy Security Scan">
+  </a>
+  <a href="https://github.com/AdamShannag/volare/releases/latest">
+    <img src="https://img.shields.io/github/v/release/AdamShannag/volare?sort=semver" alt="Latest Release">
+  </a>
+  <a href="https://github.com/AdamShannag/volare/blob/master/LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  </a>
+</p>
 
+## About Volare
 
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/AdamShannag/volare/build.yml?branch=master&label=CI%2FCD&logo=github)](https://github.com/AdamShannag/volare/actions/workflows/build.yml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/AdamShannag/volare?logo=go)](https://github.com/AdamShannag/volare/blob/master/go.mod)
-[![Trivy Scan](https://img.shields.io/github/actions/workflow/status/AdamShannag/volare/build.yml?branch=master&label=Trivy%20Security%20Scan&logo=aquasec)](https://github.com/AdamShannag/volare/actions/workflows/build.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/AdamShannag/volare?sort=semver)](https://github.com/AdamShannag/volare/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/AdamShannag/volare/blob/master/LICENSE)
+**Volare** is a Kubernetes volume populator that populates Persistent Volume Claims (PVCs) from multiple external
+sources concurrently.
 
 ## TODO
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/AdamShannag/volare/pkg/downloader"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -32,7 +33,12 @@ func (h *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		return fmt.Errorf("failed to create target directory %q: %w", dir, err)
 	}
 
-	if err := h.downloader.Download(ctx, src.Http.URI, src.Http.Headers, path); err != nil {
+	resolvedHeaders := make(map[string]string, len(src.Http.Headers))
+	for k, v := range src.Http.Headers {
+		resolvedHeaders[k] = utils.FromEnv(v)
+	}
+
+	if err := h.downloader.Download(ctx, src.Http.URI, resolvedHeaders, path); err != nil {
 		return fmt.Errorf("failed to download %q: %w", src.Http.URI, err)
 	}
 
