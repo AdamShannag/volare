@@ -24,7 +24,7 @@ type Fetcher struct {
 	downloader downloader.Downloader
 }
 
-type gitlabFile struct {
+type GitlabFile struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 	Path string `json:"path"`
@@ -95,7 +95,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 	return nil
 }
 
-func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions) ([]gitlabFile, error) {
+func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions) ([]GitlabFile, error) {
 	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&ref=%s&recursive=true",
 		gitlabOpts.Host,
 		url.PathEscape(gitlabOpts.Project),
@@ -127,7 +127,7 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions)
 		return nil, fmt.Errorf("failed to list tree: status %d", resp.StatusCode)
 	}
 
-	var files []gitlabFile
+	var files []GitlabFile
 	if err = json.NewDecoder(resp.Body).Decode(&files); err != nil {
 		return nil, fmt.Errorf("failed to decode tree: %w", err)
 	}

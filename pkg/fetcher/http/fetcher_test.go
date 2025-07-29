@@ -80,10 +80,7 @@ func TestFetcher_Fetch_MkdirFails(t *testing.T) {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
 	defer func(name string) {
-		rerr := os.Remove(name)
-		if rerr != nil {
-
-		}
+		_ = os.Remove(name)
 	}(tmpFile.Name())
 
 	src := types.Source{
