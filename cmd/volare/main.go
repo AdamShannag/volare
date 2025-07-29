@@ -11,6 +11,7 @@ import (
 	httpf "github.com/AdamShannag/volare/pkg/fetcher/http"
 	"github.com/AdamShannag/volare/pkg/fetcher/s3"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"log"
 	"log/slog"
 	"net/http"
@@ -42,6 +43,7 @@ func main() {
 		groupVersion string
 		resource     string
 		spec         string
+		envs         string
 	)
 
 	flag.StringVar(&masterURL, "masterurl", "", "Kubernetes API server URL (optional, in-cluster if empty)")
@@ -58,7 +60,8 @@ func main() {
 	flag.StringVar(&kind, "kind", "VolarePopulator", "Kind name")
 	flag.StringVar(&groupVersion, "groupversion", "v1alpha1", "API group version")
 	flag.StringVar(&resource, "resource", "volarepopulators", "Resource name")
-	flag.StringVar(&spec, "spec", "", "JSON Specs passed from the populator")
+	flag.StringVar(&spec, "spec", "", "JSON Specs passed to the populator")
+	flag.StringVar(&envs, "envs", "", "JSON Envs passed to the populator")
 
 	flag.Parse()
 
@@ -97,11 +100,16 @@ func main() {
 		)
 
 	case "populator":
+		err := utils.LoadEnvFromJSON([]byte(envs))
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		httpClient := &http.Client{Timeout: populatorTimeout}
 		httpDownloader := downloader.NewHTTPDownloader(downloader.WithHTTPClient(httpClient))
 
 		registry := fetcher.NewRegistry()
-		err := registry.Register(types.SourceTypeHTTP, httpf.NewFetcher(httpDownloader))
+		err = registry.Register(types.SourceTypeHTTP, httpf.NewFetcher(httpDownloader))
 		if err != nil {
 			log.Fatal(err)
 		}

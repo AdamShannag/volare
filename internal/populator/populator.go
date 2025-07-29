@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/AdamShannag/volare/pkg/fetcher"
 	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 	"github.com/AdamShannag/volare/pkg/workerpool"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,8 +31,15 @@ func ArgsFactory(mountPath string) func(_ bool, u *unstructured.Unstructured) ([
 			return args, err
 		}
 
+		envBytes, err := utils.GetEnvJSON()
+		if err != nil {
+			slog.Error("failed to marshal Envs to JSON", "error", err)
+			return args, err
+		}
+
 		args = append(args, "--mode=populator")
 		args = append(args, fmt.Sprintf("--spec=%s", string(specBytes)))
+		args = append(args, fmt.Sprintf("--envs=%s", string(envBytes)))
 		args = append(args, fmt.Sprintf("--mountpath=%s", mountPath))
 
 		return args, nil
