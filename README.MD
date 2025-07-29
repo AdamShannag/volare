@@ -25,10 +25,6 @@
 **Volare** is a Kubernetes volume populator that populates Persistent Volume Claims (PVCs) from multiple external
 sources concurrently.
 
-## TODO
-
-* Add unit tests
-
 ## Supported Source Types
 
 - **S3** – AWS S3 and compatible providers
