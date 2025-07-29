@@ -19,7 +19,7 @@ import (
 
 type Client interface {
 	ListObjects(ctx context.Context, bucket string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo
-	GetObject(ctx context.Context, bucket, object string, opts minio.GetObjectOptions) (*minio.Object, error)
+	GetObject(ctx context.Context, bucket, object string, opts minio.GetObjectOptions) (io.ReadCloser, error)
 }
 
 type ClientFactory func(opts types.S3Options) (Client, error)
@@ -137,9 +137,13 @@ func downloadObject(ctx context.Context, client Client, mountPath, bucket, key s
 }
 
 func MinioClientFactory(opts types.S3Options) (Client, error) {
-	return minio.New(opts.Endpoint, &minio.Options{
+	c, err := minio.New(opts.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(utils.FromEnv(opts.AccessKeyID), utils.FromEnv(opts.SecretAccessKey), utils.FromEnv(opts.SessionToken)),
 		Secure: opts.Secure,
 		Region: opts.Region,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &minioAdapter{client: c}, nil
 }
