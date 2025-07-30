@@ -297,6 +297,10 @@ spec:
   workers: 4
 ```
 
+> **Note:** You can define as many sources as needed. For example, it's possible to configure multiple sources of the
+> same or different types—such as 3 GitHub sources, 2 GitLab sources, 3 S3 sources, and even 20 HTTP sources—within the
+> same configuration.
+
 ## License
 
 [MIT](LICENSE)
