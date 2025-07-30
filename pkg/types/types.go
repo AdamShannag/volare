@@ -43,21 +43,21 @@ type HttpOptions struct {
 }
 
 type GitlabOptions struct {
-	Host    string `json:"host"`
-	Project string `json:"project"`
-	Ref     string `json:"ref"`
-	Path    string `json:"path"`
-	Token   string `json:"token,omitempty"`
-	Workers *int   `json:"workers,omitempty"`
+	Host    string   `json:"host"`
+	Project string   `json:"project"`
+	Ref     string   `json:"ref"`
+	Paths   []string `json:"paths"`
+	Token   string   `json:"token,omitempty"`
+	Workers *int     `json:"workers,omitempty"`
 }
 
 type GitHubOptions struct {
-	Owner   string `json:"owner"`
-	Repo    string `json:"repo"`
-	Ref     string `json:"ref"`
-	Path    string `json:"path"`
-	Token   string `json:"token,omitempty"`
-	Workers *int   `json:"workers,omitempty"`
+	Owner   string   `json:"owner"`
+	Repo    string   `json:"repo"`
+	Ref     string   `json:"ref"`
+	Paths   []string `json:"paths"`
+	Token   string   `json:"token,omitempty"`
+	Workers *int     `json:"workers,omitempty"`
 }
 
 type S3Options struct {
@@ -70,4 +70,9 @@ type S3Options struct {
 	SecretAccessKey string   `json:"secretAccessKey"`
 	SessionToken    string   `json:"sessionToken,omitempty"`
 	Workers         *int     `json:"workers,omitempty"`
+}
+
+type ObjectToDownload struct {
+	ActualPath string
+	Path       string
 }

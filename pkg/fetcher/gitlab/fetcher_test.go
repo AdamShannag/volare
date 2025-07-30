@@ -30,7 +30,7 @@ func (m *MockDownloader) Download(_ context.Context, _ string, _ map[string]stri
 func TestFetcher_Fetch_Success(t *testing.T) {
 	t.Parallel()
 
-	files := []gitlab.GitlabFile{
+	files := []gitlab.File{
 		{Name: "file1.txt", Type: "blob", Path: "path/file1.txt"},
 		{Name: "file2.txt", Type: "blob", Path: "path/file2.txt"},
 		{Name: "dir", Type: "tree", Path: "path/dir"},
@@ -56,7 +56,7 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 			Host:    apiServer.URL,
 			Project: "project",
 			Ref:     "main",
-			Path:    "path",
+			Paths:   []string{"path"},
 		},
 	}
 
@@ -89,7 +89,7 @@ func TestFetcher_Fetch_ListFilesError(t *testing.T) {
 			Host:    apiServer.URL,
 			Project: "project",
 			Ref:     "main",
-			Path:    "",
+			Paths:   []string{""},
 		},
 	}
 
@@ -102,7 +102,7 @@ func TestFetcher_Fetch_ListFilesError(t *testing.T) {
 func TestFetcher_Fetch_DownloadError(t *testing.T) {
 	t.Parallel()
 
-	files := []gitlab.GitlabFile{
+	files := []gitlab.File{
 		{Name: "file1.txt", Type: "blob", Path: "file1.txt"},
 	}
 
@@ -125,7 +125,7 @@ func TestFetcher_Fetch_DownloadError(t *testing.T) {
 			Host:    apiServer.URL,
 			Project: "project",
 			Ref:     "main",
-			Path:    "",
+			Paths:   []string{""},
 		},
 	}
 

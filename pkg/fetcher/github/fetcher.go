@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 )
 
@@ -62,17 +61,37 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		return fmt.Errorf("invalid source configuration: 'github' options must be provided for source type 'github'")
 	}
 
-	files, err := f.listFiles(ctx, *src.GitHub)
-	if err != nil {
-		return err
+	var filesToDownload []types.ObjectToDownload
+	for _, p := range src.GitHub.Paths {
+		if utils.IsFile(p) {
+			filesToDownload = append(filesToDownload, types.ObjectToDownload{
+				Path:       p,
+				ActualPath: strings.TrimPrefix(p, "/"),
+			})
+			continue
+		}
+
+		files, err := f.listFiles(ctx, *src.GitHub, p)
+		if err != nil {
+			return err
+		}
+
+		for _, fl := range files {
+			if fl.Type == "blob" {
+				filesToDownload = append(filesToDownload, types.ObjectToDownload{
+					Path:       p,
+					ActualPath: fl.Path,
+				})
+			}
+		}
 	}
 
 	type job struct {
-		item githubItem
+		file types.ObjectToDownload
 	}
 
 	processor := func(ctx context.Context, j job) error {
-		return f.downloadBlob(ctx, mountPath, j.item, *src.GitHub)
+		return f.downloadBlob(ctx, mountPath, j.file, *src.GitHub)
 	}
 
 	numOfWorkers := types.DefaultNumberOfWorkers
@@ -80,14 +99,11 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		numOfWorkers = *src.GitHub.Workers
 	}
 
-	pool := workerpool.New(ctx, numOfWorkers, len(files), processor)
+	pool := workerpool.New(ctx, numOfWorkers, len(filesToDownload), processor)
 	pool.Start()
 
-	for _, file := range files {
-		if file.Type != "blob" {
-			continue
-		}
-		if err = pool.Submit(job{item: file}); err != nil {
+	for _, fl := range filesToDownload {
+		if err := pool.Submit(job{file: fl}); err != nil {
 			pool.Cancel()
 			pool.Stop()
 			return err
@@ -96,7 +112,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 
 	pool.Stop()
 
-	for err = range pool.Errors() {
+	for err := range pool.Errors() {
 		if err != nil {
 			return err
 		}
@@ -105,7 +121,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 	return nil
 }
 
-func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]githubItem, error) {
+func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions, path string) ([]githubItem, error) {
 	apiURL := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1",
 		f.baseURL,
 		url.PathEscape(ghOpts.Owner),
@@ -143,12 +159,12 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]
 	}
 
 	var filtered []githubItem
-	trimPrefix := strings.Trim(ghOpts.Path, "/") + "/"
+	trimPrefix := strings.Trim(path, "/") + "/"
 	for _, item := range tree.Tree {
 		if item.Type != "blob" {
 			continue
 		}
-		if ghOpts.Path == "" || strings.HasPrefix(item.Path, trimPrefix) || item.Path == ghOpts.Path {
+		if path == "" || strings.HasPrefix(item.Path, trimPrefix) || item.Path == path {
 			filtered = append(filtered, item)
 		}
 	}
@@ -156,21 +172,18 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions) ([]
 	return filtered, nil
 }
 
-func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, item githubItem, ghOpts types.GitHubOptions) error {
+func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types.ObjectToDownload, ghOpts types.GitHubOptions) error {
 	rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s",
 		ghOpts.Owner,
 		ghOpts.Repo,
 		ghOpts.Ref,
-		item.Path,
+		file.ActualPath,
 	)
-
-	slog.Info("downloading file from github", slog.String("url", rawURL))
 
 	headers := map[string]string{}
 	if ghOpts.Token != "" {
 		headers["Authorization"] = "Bearer " + utils.FromEnv(ghOpts.Token)
 	}
 
-	fullPath := filepath.Join(mountPath, item.Path)
-	return f.downloader.Download(ctx, rawURL, headers, fullPath)
+	return f.downloader.Download(ctx, rawURL, headers, utils.ResolveTargetPath(mountPath, file))
 }

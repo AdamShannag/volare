@@ -67,7 +67,7 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 			Owner: "owner",
 			Repo:  "repo",
 			Ref:   "main",
-			Path:  "example",
+			Paths: []string{"example"},
 			Token: "",
 		},
 	}
@@ -131,6 +131,7 @@ func TestFetcher_Fetch_DownloadError(t *testing.T) {
 			Owner: "owner",
 			Repo:  "repo",
 			Ref:   "main",
+			Paths: []string{""},
 		},
 	}
 

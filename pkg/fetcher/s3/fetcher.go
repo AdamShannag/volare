@@ -32,10 +32,6 @@ func NewFetcher(factory ClientFactory) fetcher.Fetcher {
 	return &Fetcher{clientFactory: factory}
 }
 
-type s3Job struct {
-	objectKey string
-}
-
 func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) error {
 	if src.S3 == nil {
 		return errors.New("invalid source configuration: 's3' options must be provided for source type 's3'")
@@ -47,7 +43,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		return fmt.Errorf("failed to create s3 client: %w", err)
 	}
 
-	var allObjects []string
+	var allObjects []types.ObjectToDownload
 	for _, p := range opts.Paths {
 		objectCh := client.ListObjects(ctx, opts.Bucket, minio.ListObjectsOptions{
 			Prefix:    strings.TrimLeft(p, "/"),
@@ -61,7 +57,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 			if strings.HasSuffix(object.Key, "/") {
 				continue
 			}
-			allObjects = append(allObjects, object.Key)
+			allObjects = append(allObjects, types.ObjectToDownload{ActualPath: object.Key, Path: p})
 		}
 	}
 
@@ -70,8 +66,12 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		return nil
 	}
 
-	processor := func(ctx context.Context, job s3Job) error {
-		return downloadObject(ctx, client, mountPath, opts.Bucket, job.objectKey)
+	type job struct {
+		file types.ObjectToDownload
+	}
+
+	processor := func(ctx context.Context, job job) error {
+		return downloadObject(ctx, client, mountPath, opts.Bucket, job.file)
 	}
 
 	numOfWorkers := types.DefaultNumberOfWorkers
@@ -82,8 +82,8 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 	pool := workerpool.New(ctx, numOfWorkers, len(allObjects), processor)
 	pool.Start()
 
-	for _, objKey := range allObjects {
-		if err = pool.Submit(s3Job{objectKey: objKey}); err != nil {
+	for _, s3File := range allObjects {
+		if err = pool.Submit(job{s3File}); err != nil {
 			pool.Cancel()
 			pool.Stop()
 			return err
@@ -101,20 +101,20 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 	return nil
 }
 
-func downloadObject(ctx context.Context, client Client, mountPath, bucket, key string) error {
-	slog.Info("downloading s3 object", "bucket", bucket, "key", key)
+func downloadObject(ctx context.Context, client Client, mountPath, bucket string, file types.ObjectToDownload) error {
+	slog.Info("downloading s3 object", "bucket", bucket, "key", file.ActualPath)
 
-	reader, err := client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	reader, err := client.GetObject(ctx, bucket, file.ActualPath, minio.GetObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to get object %q: %w", key, err)
+		return fmt.Errorf("failed to get object %q: %w", file.ActualPath, err)
 	}
 	defer func() {
 		if err = reader.Close(); err != nil {
-			slog.Warn("error closing object reader", "key", key, "error", err)
+			slog.Warn("error closing object reader", "key", file.ActualPath, "error", err)
 		}
 	}()
 
-	targetPath := filepath.Join(mountPath, key)
+	targetPath := utils.ResolveTargetPath(mountPath, file)
 	if err = os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory for %q: %w", targetPath, err)
 	}

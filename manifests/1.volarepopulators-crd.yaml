@@ -52,8 +52,10 @@ spec:
                             type: string
                           ref:
                             type: string
-                          path:
-                            type: string
+                          paths:
+                            type: array
+                            items:
+                              type: string
                           token:
                             type: string
                           workers:
@@ -69,8 +71,10 @@ spec:
                             type: string
                           ref:
                             type: string
-                          path:
-                            type: string
+                          paths:
+                            type: array
+                            items:
+                              type: string
                           token:
                             type: string
                           workers:

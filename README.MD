@@ -170,14 +170,14 @@ spec:
 
 ### GitLab Source
 
-| Field            | Type    | Required | Description                                  |
-|------------------|---------|----------|----------------------------------------------|
-| `gitlab.host`    | string  | ✅        | GitLab host (e.g., `https://gitlab.com`)     |
-| `gitlab.project` | string  | ✅        | Full project path (e.g., `group/my-project`) |
-| `gitlab.ref`     | string  | ✅        | Git reference (branch/tag/commit)            |
-| `gitlab.path`    | string  | ✅        | Path to file or directory inside repo        |
-| `gitlab.token`   | string  | ❌        | Required if private repo                     |
-| `gitlab.workers` | integer | ❌        | Optional, default is 2                       |
+| Field            | Type      | Required | Description                                                                                                                                    |
+|------------------|-----------|----------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `gitlab.host`    | string    | ✅        | GitLab host (e.g., `https://gitlab.com`)                                                                                                       |
+| `gitlab.project` | string    | ✅        | Full project path (e.g., `group/my-project`)                                                                                                   |
+| `gitlab.ref`     | string    | ✅        | Git reference (branch/tag/commit)                                                                                                              |
+| `gitlab.paths`   | string\[] | ✅        | List of file or directory keys to download. Keys ending with / will create the corresponding directory; otherwise only contents are extracted. |
+| `gitlab.token`   | string    | ❌        | Required if private repo                                                                                                                       |
+| `gitlab.workers` | integer   | ❌        | Optional, default is 2                                                                                                                         |
 
 #### Example
 
@@ -188,21 +188,24 @@ spec:
     host: https://gitlab.com
     project: group/my-project
     ref: master
-    path: integration/testutils
+    paths:
+      - integration/testutils/ # will create testutils directory and its content
+      - integration/testutils # won't create testutils directory, just its content
+      - integration/testutils/db.go
     token: secret-token
     workers: 2
 ```
 
 ### GitHub Source
 
-| Field            | Type    | Required | Description                           |
-|------------------|---------|----------|---------------------------------------|
-| `github.owner`   | string  | ✅        | GitHub repository owner               |
-| `github.repo`    | string  | ✅        | Repository name                       |
-| `github.ref`     | string  | ✅        | Git reference (branch/tag/commit)     |
-| `github.path`    | string  | ✅        | Path to file or directory inside repo |
-| `github.token`   | string  | ❌        | Required if private repo              |
-| `github.workers` | integer | ❌        | Optional, default is 2                |
+| Field            | Type      | Required | Description                                                                                                                                    |
+|------------------|-----------|----------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `github.owner`   | string    | ✅        | GitHub repository owner                                                                                                                        |
+| `github.repo`    | string    | ✅        | Repository name                                                                                                                                |
+| `github.ref`     | string    | ✅        | Git reference (branch/tag/commit)                                                                                                              |
+| `github.paths`   | string\[] | ✅        | List of file or directory keys to download. Keys ending with / will create the corresponding directory; otherwise only contents are extracted. |
+| `github.token`   | string    | ❌        | Required if private repo                                                                                                                       |
+| `github.workers` | integer   | ❌        | Optional, default is 2                                                                                                                         |
 
 #### Example
 
@@ -213,23 +216,25 @@ spec:
     owner: kubernetes-csi
     repo: lib-volume-populator
     ref: master
-    path: example
+    paths:
+      - example/ # will create example directory and its content
+      - example # won't create example directory, just its content
     workers: 2
 ```
 
 ### S3 Source
 
-| Field                | Type      | Required | Description                              |
-|----------------------|-----------|----------|------------------------------------------|
-| `s3.endpoint`        | string    | ✅        | S3-compatible service endpoint           |
-| `s3.secure`          | boolean   | ❌        | Use HTTPS (default: false)               |
-| `s3.bucket`          | string    | ✅        | Name of the bucket                       |
-| `s3.paths`           | string\[] | ✅        | List of files or directories to download |
-| `s3.region`          | string    | ❌        | Region (optional for some services)      |
-| `s3.accessKeyId`     | string    | ✅        | Access key ID                            |
-| `s3.secretAccessKey` | string    | ✅        | Secret access key                        |
-| `s3.sessionToken`    | string    | ❌        | Temporary token (if using session auth)  |
-| `s3.workers`         | integer   | ❌        | Optional, default is 2                   |
+| Field                | Type      | Required | Description                                                                                                                                    |
+|----------------------|-----------|----------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `s3.endpoint`        | string    | ✅        | S3-compatible service endpoint                                                                                                                 |
+| `s3.secure`          | boolean   | ❌        | Use HTTPS (default: false)                                                                                                                     |
+| `s3.bucket`          | string    | ✅        | Name of the bucket                                                                                                                             |
+| `s3.paths`           | string\[] | ✅        | List of file or directory keys to download. Keys ending with / will create the corresponding directory; otherwise only contents are extracted. |
+| `s3.region`          | string    | ❌        | Region (optional for some services)                                                                                                            |
+| `s3.accessKeyId`     | string    | ✅        | Access key ID                                                                                                                                  |
+| `s3.secretAccessKey` | string    | ✅        | Secret access key                                                                                                                              |
+| `s3.sessionToken`    | string    | ❌        | Temporary token (if using session auth)                                                                                                        |
+| `s3.workers`         | integer   | ❌        | Optional, default is 2                                                                                                                         |
 
 #### Example
 
@@ -244,7 +249,8 @@ spec:
     accessKeyId: access-key-id
     secretAccessKey: secret
     paths:
-      - backups/
+      - backups/ # will create backup directory and its content
+      - backups # won't create backup directory, just its content
       - images/image1.png
     workers: 3
 ```
@@ -270,7 +276,8 @@ spec:
         owner: kubernetes-csi
         repo: lib-volume-populator
         ref: master
-        path: example
+        paths:
+          - example
         # public repo       
         # token: GITHUB_TOKEN # Read from env if set, otherwise used as a raw string
     - type: s3

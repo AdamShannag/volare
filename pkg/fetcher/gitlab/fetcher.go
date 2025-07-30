@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"strings"
 )
 
 const gitlabTokenHeader = "PRIVATE-TOKEN"
@@ -24,7 +24,7 @@ type Fetcher struct {
 	downloader downloader.Downloader
 }
 
-type GitlabFile struct {
+type File struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 	Path string `json:"path"`
@@ -52,17 +52,37 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		return fmt.Errorf("invalid source configuration: 'gitlab' options must be provided for source type 'gitlab'")
 	}
 
-	files, err := f.listFiles(ctx, *src.Gitlab)
-	if err != nil {
-		return err
+	var filesToDownload []types.ObjectToDownload
+	for _, p := range src.Gitlab.Paths {
+		if utils.IsFile(p) {
+			filesToDownload = append(filesToDownload, types.ObjectToDownload{
+				Path:       p,
+				ActualPath: strings.TrimPrefix(p, "/"),
+			})
+			continue
+		}
+
+		files, err := f.listFiles(ctx, *src.Gitlab, p)
+		if err != nil {
+			return fmt.Errorf("listing GitLab path %q: %w", p, err)
+		}
+
+		for _, fl := range files {
+			if fl.Type == "blob" {
+				filesToDownload = append(filesToDownload, types.ObjectToDownload{
+					Path:       p,
+					ActualPath: fl.Path,
+				})
+			}
+		}
 	}
 
 	type job struct {
-		filePath string
+		file types.ObjectToDownload
 	}
 
 	processor := func(ctx context.Context, j job) error {
-		return f.downloadBlob(ctx, mountPath, j.filePath, *src.Gitlab)
+		return f.downloadBlob(ctx, mountPath, j.file, *src.Gitlab)
 	}
 
 	numOfWorkers := types.DefaultNumberOfWorkers
@@ -70,14 +90,11 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		numOfWorkers = *src.Gitlab.Workers
 	}
 
-	pool := workerpool.New(ctx, numOfWorkers, len(files), processor)
+	pool := workerpool.New(ctx, numOfWorkers, len(filesToDownload), processor)
 	pool.Start()
 
-	for _, file := range files {
-		if file.Type != "blob" {
-			continue
-		}
-		if err = pool.Submit(job{filePath: file.Path}); err != nil {
+	for _, fl := range filesToDownload {
+		if err := pool.Submit(job{file: fl}); err != nil {
 			pool.Cancel()
 			pool.Stop()
 			return err
@@ -86,7 +103,7 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 
 	pool.Stop()
 
-	for err = range pool.Errors() {
+	for err := range pool.Errors() {
 		if err != nil {
 			return err
 		}
@@ -95,11 +112,11 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 	return nil
 }
 
-func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions) ([]GitlabFile, error) {
+func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions, path string) ([]File, error) {
 	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&ref=%s&recursive=true",
 		gitlabOpts.Host,
 		url.PathEscape(gitlabOpts.Project),
-		url.QueryEscape(gitlabOpts.Path),
+		url.QueryEscape(path),
 		url.QueryEscape(gitlabOpts.Ref),
 	)
 
@@ -127,7 +144,7 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions)
 		return nil, fmt.Errorf("failed to list tree: status %d", resp.StatusCode)
 	}
 
-	var files []GitlabFile
+	var files []File
 	if err = json.NewDecoder(resp.Body).Decode(&files); err != nil {
 		return nil, fmt.Errorf("failed to decode tree: %w", err)
 	}
@@ -135,11 +152,11 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions)
 	return files, nil
 }
 
-func (f *Fetcher) downloadBlob(ctx context.Context, mountPath, filePath string, src types.GitlabOptions) error {
+func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types.ObjectToDownload, src types.GitlabOptions) error {
 	fileURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/files/%s/raw?ref=%s",
 		src.Host,
 		url.PathEscape(src.Project),
-		url.PathEscape(filePath),
+		url.PathEscape(file.ActualPath),
 		url.QueryEscape(src.Ref),
 	)
 
@@ -150,6 +167,5 @@ func (f *Fetcher) downloadBlob(ctx context.Context, mountPath, filePath string, 
 		headers[gitlabTokenHeader] = utils.FromEnv(src.Token)
 	}
 
-	fullPath := filepath.Join(mountPath, filePath)
-	return f.downloader.Download(ctx, fileURL, headers, fullPath)
+	return f.downloader.Download(ctx, fileURL, headers, utils.ResolveTargetPath(mountPath, file))
 }

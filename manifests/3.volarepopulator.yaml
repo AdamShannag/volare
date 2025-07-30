@@ -22,17 +22,19 @@ spec:
 #        host: https://gitlab.com
 #        project: gorup/my-project
 #        ref: master
-#        path: integration/testutils  # Can be a directory or a specific file to download
+#        paths:
+#          - integration/testutils  # Can be a directory or a specific file to download
 #        token: secret-token          # Required if the repository is private
 #        workers: 2                   # Optional, defaults to 2 concurrent workers
-#
+
     - type: github
       targetPath: /github # relative path to the mountPath
       github:
         owner: kubernetes-csi
         repo: lib-volume-populator
         ref: master
-        path: example               # Can be a directory or a specific file to download
+        paths:
+          - example               # Can be a directory or a specific file to download
         # token: secret-token       # Optional, only needed for private repositories
         workers: 2                  # Optional, defaults to 2 concurrent workers
 #
