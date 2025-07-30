@@ -166,6 +166,9 @@ spec:
   targetPath: docs
   http:
     uri: https://example.com/readme.md
+    headers:
+      Authorization: BEARER_TOKEN
+      Content-Type: application/json
 ```
 
 ### GitLab Source
