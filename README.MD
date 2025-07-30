@@ -27,37 +27,235 @@ sources concurrently.
 
 ## Supported Source Types
 
-- **S3** – AWS S3 and compatible providers
+- **HTTP** – Direct file URLs
 - **GitHub**
 - **GitLab**
-- **HTTP** – Direct file URLs
+- **S3** – S3 compatible providers
 
 ## Getting Started
 
-### 1. Prerequisites
+### 1. Install VolumeDataSource Validator (Upstream Requirement)
 
-Before using Volare, apply the upstream VolumeDataSource validator CRDs and setup:
+Volare relies on the upstream [CSI Volume Populator](https://github.com/kubernetes-csi/volume-data-source-validator).
+Install the required CRDs and RBAC by running:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/volume-data-source-validator/v1.0.1/client/config/crd/populator.storage.k8s.io_volumepopulators.yaml
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/volume-data-source-validator/v1.0.1/deploy/kubernetes/rbac-data-source-validator.yaml
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/volume-data-source-validator/v1.0.1/deploy/kubernetes/setup-data-source-validator.yaml
-````
+```
 
-### 2. Apply Volare Manifests
+### 2. Deploy Volare CRDs and Populators
 
-Apply the Volare CRDs and resources from the `manifests/` directory:
+Apply the custom resource definitions and Volare volume populators:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/1.volarepopulators-crd.yaml
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/2.volumepopulator.yaml
+```
+
+### 3. Deploy Volare Controller & Example PVC
+
+Start the Volare controller and create a sample PVC using a VolarePopulator:
+
+```bash
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/3.volarepopulator.yaml
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/4.volare-controller.yaml
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/5.pvc.yaml
+```
+
+### 4. Verify the Mounted Data
+
+Deploy a checker pod and inspect the mounted data:
+
+```bash
 kubectl apply -f https://raw.githubusercontent.com/AdamShannag/volare/master/manifests/6.checker.yaml
 ```
 
-## Example `VolarePopulator`
+Then open a shell inside the pod:
+
+```bash
+kubectl exec -it nginx -- bash
+cd /mnt/checker
+ls
+```
+
+## Sources Configuration Reference
+
+A detailed overview of all supported source types (`http`, `gitlab`, `github`, `s3`), their available configuration
+options, and practical usage examples.
+
+> **Note on Environment Variable**
+> For sensitive fields like tokens and credentials, values can be loaded from environment variables.
+> If the value matches the name of an environment variable, it will be substituted; otherwise, the literal value will be
+> used as-is.
+
+### Fields that support environment variable:
+
+| Source Type | Field                 |
+|-------------|-----------------------|
+| `http`      | Headers (values only) |
+| `gitlab`    | `token`               |
+| `github`    | `token`               |
+| `s3`        | `accessKeyId`         |
+| `s3`        | `secretAccessKey`     |
+| `s3`        | `sessionToken`        |
+
+> Example:
+> If you set `token: GITLAB_TOKEN` in your config and your environment has `GITLAB_TOKEN=abcd1234`, it will use
+`abcd1234`.
+
+> These environment variables can be injected directly into the controller deployment like this:
+
+```yaml
+env:
+  - name: GITLAB_TOKEN
+    value: secret-token
+```
+
+> Full example snippet from a Kubernetes controller deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller
+  namespace: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: controller
+  template:
+    metadata:
+      labels:
+        app: controller
+    spec:
+      serviceAccountName: vp-account
+      containers:
+        - name: volarepopulator
+          image: ghcr.io/adamshannag/volare:v0.1.3
+          args:
+            - "--mode=controller"
+            - "--image=ghcr.io/adamshannag/volare:v0.1.3"
+            - "--namespace=controller"
+            - "--mountpath=/mnt/checker"
+          env:
+            - name: GITLAB_TOKEN
+              value: secret-token
+```
+
+### Common Required Fields (All Types)
+
+| Field        | Type   | Required | Description                                          |
+|--------------|--------|----------|------------------------------------------------------|
+| `type`       | string | ✅        | One of: `http`, `gitlab`, `github`, `s3`             |
+| `targetPath` | string | ✅        | Relative path under `mountPath` to store the file(s) |
+
+### HTTP Source
+
+| Field          | Type   | Required | Description                                    |
+|----------------|--------|----------|------------------------------------------------|
+| `http.uri`     | string | ✅        | URI of the file to download (must be full URL) |
+| `http.headers` | object | ❌        | Optional HTTP headers (e.g., auth)             |
+
+#### Example
+
+```yaml
+- type: http
+  targetPath: docs
+  http:
+    uri: https://example.com/readme.md
+```
+
+### GitLab Source
+
+| Field            | Type    | Required | Description                                  |
+|------------------|---------|----------|----------------------------------------------|
+| `gitlab.host`    | string  | ✅        | GitLab host (e.g., `https://gitlab.com`)     |
+| `gitlab.project` | string  | ✅        | Full project path (e.g., `group/my-project`) |
+| `gitlab.ref`     | string  | ✅        | Git reference (branch/tag/commit)            |
+| `gitlab.path`    | string  | ✅        | Path to file or directory inside repo        |
+| `gitlab.token`   | string  | ❌        | Required if private repo                     |
+| `gitlab.workers` | integer | ❌        | Optional, default is 2                       |
+
+#### Example
+
+```yaml
+- type: gitlab
+  targetPath: integrations
+  gitlab:
+    host: https://gitlab.com
+    project: group/my-project
+    ref: master
+    path: integration/testutils
+    token: secret-token
+    workers: 2
+```
+
+### GitHub Source
+
+| Field            | Type    | Required | Description                           |
+|------------------|---------|----------|---------------------------------------|
+| `github.owner`   | string  | ✅        | GitHub repository owner               |
+| `github.repo`    | string  | ✅        | Repository name                       |
+| `github.ref`     | string  | ✅        | Git reference (branch/tag/commit)     |
+| `github.path`    | string  | ✅        | Path to file or directory inside repo |
+| `github.token`   | string  | ❌        | Required if private repo              |
+| `github.workers` | integer | ❌        | Optional, default is 2                |
+
+#### Example
+
+```yaml
+- type: github
+  targetPath: /github
+  github:
+    owner: kubernetes-csi
+    repo: lib-volume-populator
+    ref: master
+    path: example
+    workers: 2
+```
+
+### S3 Source
+
+| Field                | Type      | Required | Description                              |
+|----------------------|-----------|----------|------------------------------------------|
+| `s3.endpoint`        | string    | ✅        | S3-compatible service endpoint           |
+| `s3.secure`          | boolean   | ❌        | Use HTTPS (default: false)               |
+| `s3.bucket`          | string    | ✅        | Name of the bucket                       |
+| `s3.paths`           | string\[] | ✅        | List of files or directories to download |
+| `s3.region`          | string    | ❌        | Region (optional for some services)      |
+| `s3.accessKeyId`     | string    | ✅        | Access key ID                            |
+| `s3.secretAccessKey` | string    | ✅        | Secret access key                        |
+| `s3.sessionToken`    | string    | ❌        | Temporary token (if using session auth)  |
+| `s3.workers`         | integer   | ❌        | Optional, default is 2                   |
+
+#### Example
+
+```yaml
+- type: s3
+  targetPath: /s3
+  s3:
+    endpoint: fra1.digitaloceanspaces.com
+    secure: true
+    bucket: bucket-name
+    region: us-east-1
+    accessKeyId: access-key-id
+    secretAccessKey: secret
+    paths:
+      - backups/
+      - images/image1.png
+    workers: 3
+```
+
+### Global Options
+
+| Field     | Type    | Required | Description                                             |
+|-----------|---------|----------|---------------------------------------------------------|
+| `workers` | integer | ❌        | Global number of concurrent source workers (default: 2) |
+
+### Example `VolarePopulator`
 
 ```yaml
 apiVersion: k8s.volare.dev/v1alpha1
