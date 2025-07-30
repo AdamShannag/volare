@@ -134,10 +134,10 @@ spec:
       serviceAccountName: vp-account
       containers:
         - name: volarepopulator
-          image: ghcr.io/adamshannag/volare:v0.1.3
+          image: ghcr.io/adamshannag/volare:v0.2.0
           args:
             - "--mode=controller"
-            - "--image=ghcr.io/adamshannag/volare:v0.1.3"
+            - "--image=ghcr.io/adamshannag/volare:v0.2.0"
             - "--namespace=controller"
             - "--mountpath=/mnt/checker"
           env:
