@@ -89,7 +89,8 @@ ls
 
 ## Sources Configuration Reference
 
-A detailed overview of all supported source types (`http`, `gitlab`, `github`, `s3`), their available configuration
+A detailed overview of all supported source types (`http`, `gitlab`, `github`, `s3`, `git`), their available
+configuration
 options, and practical usage examples.
 
 > **Note on Environment Variable**
