@@ -158,7 +158,7 @@ spec:
 
 | Field        | Type   | Required | Description                                          |
 |--------------|--------|----------|------------------------------------------------------|
-| `type`       | string | ✅        | One of: `http`, `gitlab`, `github`, `s3`             |
+| `type`       | string | ✅        | One of: `http`, `gitlab`, `github`, `s3`, `git`      |
 | `targetPath` | string | ✅        | Relative path under `mountPath` to store the file(s) |
 
 ### HTTP Source
