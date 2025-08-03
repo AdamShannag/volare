@@ -52,4 +52,14 @@ spec:
 #          - images/image1.png      # Downloads only the specific file "image1.png"
 #        workers: 3                 # Optional, defaults to 2 concurrent workers
 
+
+    - type: git
+      targetPath: /volare
+      git:
+        url: https://github.com/AdamShannag/volare
+        paths:
+          - assets/
+          - README.md
+        workers: 3
+
   workers: 2  # Optional, sets the global number of concurrent source workers (defaults to 2)

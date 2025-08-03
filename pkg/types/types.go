@@ -13,6 +13,7 @@ const (
 	SourceTypeS3     SourceType = "s3"
 	SourceTypeGITHUB SourceType = "github"
 	SourceTypeGITLAB SourceType = "gitlab"
+	SourceTypeGIT    SourceType = "git"
 )
 
 type VolarePopulator struct {
@@ -35,6 +36,7 @@ type Source struct {
 	Gitlab *GitlabOptions `json:"gitlab,omitempty"`
 	GitHub *GitHubOptions `json:"github,omitempty"`
 	S3     *S3Options     `json:"s3,omitempty"`
+	Git    *GitOptions    `json:"git,omitempty"`
 }
 
 type HttpOptions struct {
@@ -75,4 +77,14 @@ type S3Options struct {
 type ObjectToDownload struct {
 	ActualPath string
 	Path       string
+}
+
+type GitOptions struct {
+	Url      string   `json:"url"`
+	Username string   `json:"username,omitempty"`
+	Password string   `json:"password,omitempty"`
+	Ref      string   `json:"ref,omitempty"`
+	Remote   string   `json:"remote,omitempty"`
+	Paths    []string `json:"paths"`
+	Workers  *int     `json:"workers,omitempty"`
 }

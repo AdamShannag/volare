@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"github.com/AdamShannag/volare/internal/populator"
+	"github.com/AdamShannag/volare/pkg/cloner"
 	"github.com/AdamShannag/volare/pkg/downloader"
 	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/fetcher/git"
 	"github.com/AdamShannag/volare/pkg/fetcher/github"
 	"github.com/AdamShannag/volare/pkg/fetcher/gitlab"
 	httpf "github.com/AdamShannag/volare/pkg/fetcher/http"
@@ -131,6 +133,11 @@ func main() {
 		}
 
 		err = registry.Register(types.SourceTypeS3, s3.NewFetcher(s3.MinioClientFactory))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = registry.Register(types.SourceTypeGIT, git.NewFetcher(cloner.NewGitClonerFactory()))
 		if err != nil {
 			log.Fatal(err)
 		}

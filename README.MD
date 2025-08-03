@@ -27,10 +27,17 @@ sources concurrently.
 
 ## Supported Source Types
 
-- **HTTP** – Direct file URLs
-- **GitHub**
-- **GitLab**
-- **S3** – S3 compatible providers
+- **HTTP** – Direct file URLs (e.g., raw files from GitHub, CDN links).
+- **Git** – Clones the entire repository using Git over HTTPS, then extracts the requested files. Works with any Git
+  provider (GitHub, GitLab, Bitbucket, etc.).
+- **GitHub** – Downloads only the requested files directly using the GitHub API. Supports public and private
+  repositories.
+- **GitLab** – Downloads only the requested files directly using the GitLab API. Supports both public and private
+  projects.
+- **S3** – Downloads files from any S3-compatible storage provider (e.g., AWS S3, MinIO, DigitalOcean Spaces).
+
+> **Note:** The `git` source type performs a full `git clone`, which can be slower for large repositories. In contrast,
+`github` and `gitlab` use provider-specific APIs to fetch only the requested files, making them faster.
 
 ## Getting Started
 
@@ -100,6 +107,8 @@ options, and practical usage examples.
 | `s3`        | `accessKeyId`         |
 | `s3`        | `secretAccessKey`     |
 | `s3`        | `sessionToken`        |
+| `git`       | `username`            |
+| `git`       | `password`            |
 
 > Example:
 > If you set `token: GITLAB_TOKEN` in your config and your environment has `GITLAB_TOKEN=abcd1234`, it will use
@@ -134,10 +143,10 @@ spec:
       serviceAccountName: vp-account
       containers:
         - name: volarepopulator
-          image: ghcr.io/adamshannag/volare:v0.2.0
+          image: ghcr.io/adamshannag/volare:v0.3.0
           args:
             - "--mode=controller"
-            - "--image=ghcr.io/adamshannag/volare:v0.2.0"
+            - "--image=ghcr.io/adamshannag/volare:v0.3.0"
             - "--namespace=controller"
             - "--mountpath=/mnt/checker"
           env:
@@ -256,6 +265,39 @@ spec:
       - backups # won't create backup directory, just its content
       - images/image1.png
     workers: 3
+```
+
+### Git Source (Generic)
+
+| Field          | Type      | Required | Description                                                                                                                                    |
+|----------------|-----------|----------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `git.url`      | string    | ✅        | URL of the Git repository to clone                                                                                                             |
+| `git.paths`    | string\[] | ✅        | List of file or directory keys to download. Keys ending with / will create the corresponding directory; otherwise only contents are extracted. |
+| `git.ref`      | string    | ❌        | Git reference (branch/tag/commit). Defaults to the repository’s default branch if omitted                                                      |
+| `git.username` | string    | ❌        | Username for basic HTTP authentication (if required)                                                                                           |
+| `git.password` | string    | ❌        | Password or token for basic HTTP authentication (if required)                                                                                  |
+| `git.remote`   | string    | ❌        | Remote name to use (default is `origin`)                                                                                                       |
+| `git.workers`  | integer   | ❌        | Number of concurrent workers for file copying. Defaults to 2                                                                                   |
+
+#### Example
+
+```yaml
+- type: git
+  targetPath: /gitrepo
+  git:
+    # HTTPS URL to the repository — works with Bitbucket, GitHub, GitLab, etc.
+    url: https://bitbucket.org/project/repo.git
+
+    # List of file paths to extract from the repository
+    paths:
+      - README.md  # Only this file will be copied from the repo
+
+    # Authentication (required for private repositories)
+    username: BITBUCKET_USERNAME        # Your Bitbucket username
+    password: BITBUCKET_APP_PASSWORD    # Use a Bitbucket app password or API access token
+
+    # Number of parallel workers used to copy files
+    workers: 2
 ```
 
 ### Global Options
