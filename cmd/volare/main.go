@@ -7,6 +7,7 @@ import (
 	"github.com/AdamShannag/volare/pkg/cloner"
 	"github.com/AdamShannag/volare/pkg/downloader"
 	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/fetcher/gcs"
 	"github.com/AdamShannag/volare/pkg/fetcher/git"
 	"github.com/AdamShannag/volare/pkg/fetcher/github"
 	"github.com/AdamShannag/volare/pkg/fetcher/gitlab"
@@ -46,6 +47,8 @@ func main() {
 		resource     string
 		spec         string
 		envs         string
+		resources    string
+		resourcesMap string
 	)
 
 	flag.StringVar(&masterURL, "masterurl", "", "Kubernetes API server URL (optional, in-cluster if empty)")
@@ -64,6 +67,8 @@ func main() {
 	flag.StringVar(&resource, "resource", "volarepopulators", "Resource name")
 	flag.StringVar(&spec, "spec", "", "JSON Specs passed to the populator")
 	flag.StringVar(&envs, "envs", "", "JSON Envs passed to the populator")
+	flag.StringVar(&resources, "resources", "", "Path to a directory containing external files (e.g., credentials) to be passed to the populator")
+	flag.StringVar(&resourcesMap, "resourcesMap", "", "Base64-encoded JSON map of additional resource files to pass to the populator")
 
 	flag.Parse()
 
@@ -98,13 +103,24 @@ func main() {
 			gvr,
 			mountPath,
 			devicePath,
-			populator.ArgsFactory(mountPath),
+			populator.ArgsFactory(mountPath, resources),
 		)
 
 	case "populator":
 		err := utils.LoadEnvFromJSON([]byte(envs))
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		if resourcesMap != "" {
+			if err = utils.WriteResourcesDir(resourcesMap, types.ResourcesDir); err != nil {
+				log.Fatal(err)
+			}
+			defer func() {
+				if rmErr := os.RemoveAll(types.ResourcesDir); rmErr != nil {
+					slog.Error("failed to remove resources directory", "error", rmErr)
+				}
+			}()
 		}
 
 		httpClient := &http.Client{Timeout: populatorTimeout}
@@ -138,6 +154,11 @@ func main() {
 		}
 
 		err = registry.Register(types.SourceTypeGIT, git.NewFetcher(cloner.NewGitClonerFactory()))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = registry.Register(types.SourceTypeGCS, gcs.NewFetcher(gcs.GCSClientFactory))
 		if err != nil {
 			log.Fatal(err)
 		}

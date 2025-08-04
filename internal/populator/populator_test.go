@@ -2,6 +2,7 @@ package populator_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/AdamShannag/volare/internal/populator"
@@ -9,6 +10,8 @@ import (
 	"github.com/AdamShannag/volare/pkg/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -114,7 +117,7 @@ func TestArgsFactory_Success(t *testing.T) {
 	u := &unstructured.Unstructured{Object: unstructuredMap}
 
 	mountPath := "/mnt/test"
-	argsFunc := populator.ArgsFactory(mountPath)
+	argsFunc := populator.ArgsFactory(mountPath, "")
 
 	args, err := argsFunc(false, u)
 	if err != nil {
@@ -155,7 +158,7 @@ func TestArgsFactory_InvalidUnstructured(t *testing.T) {
 		},
 	}
 
-	argsFunc := populator.ArgsFactory("/mnt/test")
+	argsFunc := populator.ArgsFactory("/mnt/test", "")
 
 	args, err := argsFunc(false, u)
 	if err == nil {
@@ -163,6 +166,84 @@ func TestArgsFactory_InvalidUnstructured(t *testing.T) {
 	}
 	if len(args) != 0 {
 		t.Errorf("expected empty args slice on error, got %v", args)
+	}
+}
+
+func TestArgsFactory_WithResources(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	sampleFiles := map[string]string{
+		"foo.txt":        "Hello, Foo!",
+		"nested/bar.txt": "Nested Bar Content",
+	}
+	for path, content := range sampleFiles {
+		fullPath := filepath.Join(tempDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("failed to create dir for %s: %v", path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("failed to write file %s: %v", path, err)
+		}
+	}
+
+	vp := types.VolarePopulator{
+		TypeMeta:   metav1.TypeMeta{Kind: "VolarePopulator", APIVersion: "volare/v1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "test-populator"},
+		Spec: types.VolarePopulatorSpec{
+			Sources: []types.Source{{Type: "http", TargetPath: "path/to/target"}},
+		},
+	}
+	unstructuredMap, err := toUnstructured(vp)
+	if err != nil {
+		t.Fatalf("failed to convert to unstructured: %v", err)
+	}
+	u := &unstructured.Unstructured{Object: unstructuredMap}
+
+	mountPath := "/mnt/test"
+	argsFunc := populator.ArgsFactory(mountPath, tempDir)
+
+	args, err := argsFunc(false, u)
+	if err != nil {
+		t.Fatalf("ArgsFactory returned error: %v", err)
+	}
+
+	if len(args) < 5 {
+		t.Fatalf("expected at least 5 args, got %d: %v", len(args), args)
+	}
+
+	var resourcesArg string
+	for _, a := range args {
+		if strings.HasPrefix(a, "--resourcesMap=") {
+			resourcesArg = a
+			break
+		}
+	}
+	if resourcesArg == "" {
+		t.Fatal("expected --resourcesMap argument but none found")
+	}
+
+	jsonStr := strings.TrimPrefix(resourcesArg, "--resourcesMap=")
+	var files map[string]string
+	if err = json.Unmarshal([]byte(jsonStr), &files); err != nil {
+		t.Fatalf("failed to unmarshal resourcesMap JSON: %v", err)
+	}
+
+	for k, want := range sampleFiles {
+		b64Content, ok := files[k]
+		if !ok {
+			t.Errorf("missing file key in resourcesMap: %q", k)
+			continue
+		}
+		data, dErr := base64.StdEncoding.DecodeString(b64Content)
+		if dErr != nil {
+			t.Errorf("failed to decode base64 for key %q: %v", k, dErr)
+			continue
+		}
+		if got := string(data); got != want {
+			t.Errorf("content mismatch for %q: got %q, want %q", k, got, want)
+		}
 	}
 }
 

@@ -62,4 +62,14 @@ spec:
           - README.md
         workers: 3
 
+#    - type: gcs
+#      targetPath: /gcs-data
+#      gcs:
+#        bucket: volare_bucket
+#        paths:
+#          - images/
+#        credentialsFile: volareGCSCred.json
+#        workers: 3
+
+
   workers: 2  # Optional, sets the global number of concurrent source workers (defaults to 2)

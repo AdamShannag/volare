@@ -76,12 +76,21 @@ spec:
     spec:
       serviceAccountName: vp-account
       containers:
-        - image: ghcr.io/adamshannag/volare:v0.3.0
+        - image: ghcr.io/adamshannag/volare:v0.4.0
           name: volarepopulator
           resources: { }
           args:
             - "--mode=controller"
-            - "--image=ghcr.io/adamshannag/volare:v0.3.0"
+            - "--image=ghcr.io/adamshannag/volare:v0.4.0"
             - "--namespace=controller"
             - "--mountpath=/mnt/checker"
+#            - "--resources=/tmp/resources"
+#          volumeMounts:
+#            - name: gcp-sa
+#              mountPath: /tmp/resources
+#              readOnly: true
+#      volumes:
+#        - name: gcp-sa
+#          secret:
+#            secretName: gcs-secret
 status: { }

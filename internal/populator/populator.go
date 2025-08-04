@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 )
 
-func ArgsFactory(mountPath string) func(_ bool, u *unstructured.Unstructured) ([]string, error) {
+func ArgsFactory(mountPath, resources string) func(_ bool, u *unstructured.Unstructured) ([]string, error) {
 	return func(_ bool, u *unstructured.Unstructured) ([]string, error) {
 		var vp types.VolarePopulator
 		var args []string
@@ -35,6 +35,22 @@ func ArgsFactory(mountPath string) func(_ bool, u *unstructured.Unstructured) ([
 		if err != nil {
 			slog.Error("failed to marshal Envs to JSON", "error", err)
 			return args, err
+		}
+
+		if resources != "" {
+			files, readErr := utils.ReadFilesAsBase64(resources)
+			if readErr != nil {
+				slog.Error("failed to read external resource files", "path", resources, "error", readErr)
+				return args, err
+			}
+
+			filesBytes, marshalErr := json.Marshal(files)
+			if marshalErr != nil {
+				slog.Error("failed to marshal resource files to JSON", "error", marshalErr)
+				return args, err
+			}
+
+			args = append(args, fmt.Sprintf("--resourcesMap=%s", string(filesBytes)))
 		}
 
 		args = append(args, "--mode=populator")

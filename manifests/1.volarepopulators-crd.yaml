@@ -26,7 +26,7 @@ spec:
                     properties:
                       type:
                         type: string
-                        enum: [ "http", "gitlab", "github", "s3", "git" ]
+                        enum: [ "http", "gitlab", "github", "s3", "git", "gcs" ]
                       targetPath:
                         type: string
 
@@ -122,6 +122,21 @@ spec:
                           password:
                             type: string
                           remote:
+                            type: string
+                          workers:
+                            type: integer
+
+                      # GCS (Google Cloud Storage) options
+                      gcs:
+                        type: object
+                        properties:
+                          bucket:
+                            type: string
+                          paths:
+                            type: array
+                            items:
+                              type: string
+                          credentialsFile:
                             type: string
                           workers:
                             type: integer

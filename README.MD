@@ -35,6 +35,8 @@ sources concurrently.
 - **GitLab** – Downloads only the requested files directly using the GitLab API. Supports both public and private
   projects.
 - **S3** – Downloads files from any S3-compatible storage provider (e.g., AWS S3, MinIO, DigitalOcean Spaces).
+- **GCS** – Downloads files from Google Cloud Storage (GCS) buckets. Supports private buckets via service account
+  credentials.
 
 > **Note:** The `git` source type performs a full `git clone`, which can be slower for large repositories. In contrast,
 `github` and `gitlab` use provider-specific APIs to fetch only the requested files, making them faster.
@@ -89,7 +91,7 @@ ls
 
 ## Sources Configuration Reference
 
-A detailed overview of all supported source types (`http`, `gitlab`, `github`, `s3`, `git`), their available
+A detailed overview of all supported source types (`http`, `gitlab`, `github`, `s3`, `git`, `gcs`), their available
 configuration
 options, and practical usage examples.
 
@@ -155,12 +157,49 @@ spec:
               value: secret-token
 ```
 
+### Resources
+
+The controller supports mounting a shared directory of static resources (e.g., credentials, policies, templates) via the
+`--resources` flag. This allows passing metadata to the populator — currently used only by the `gcs` source type.
+
+| Field          | Type   | Required | Description                                                                                              |
+|----------------|--------|----------|----------------------------------------------------------------------------------------------------------|
+| `--resources`  | string | ❌        | Filesystem path where resource files are mounted. Optional.                                              |
+| `volumeMounts` | -      | ❌        | Mount the volume at the same `--resources` path. Typically mapped from a Kubernetes Secret or ConfigMap. |
+
+#### Example (with GCP credentials mounted under resources path)
+
+```yaml
+containers:
+  ...
+  args:
+    - "--mode=controller"
+    - "--image=ghcr.io/adamshannag/volare:v0.4.0"
+    - "--namespace=controller"
+    - "--mountpath=/mnt/checker"
+    - "--resources=/tmp/resources"
+
+  volumeMounts:
+    - name: controller-resources
+      mountPath: /tmp/resources/gcs # relative to --resources
+      #     mountPath: /tmp/resources/gcs/us
+      #     mountPath: /tmp/resources
+      readOnly: true
+
+volumes:
+  - name: controller-resources
+    secret:
+      secretName: gcs-secret
+```
+
+Volare scans all files under `--resources`, mapping each file's relative path to its contents for use by the Populator.
+
 ### Common Required Fields (All Types)
 
-| Field        | Type   | Required | Description                                          |
-|--------------|--------|----------|------------------------------------------------------|
-| `type`       | string | ✅        | One of: `http`, `gitlab`, `github`, `s3`, `git`      |
-| `targetPath` | string | ✅        | Relative path under `mountPath` to store the file(s) |
+| Field        | Type   | Required | Description                                            |
+|--------------|--------|----------|--------------------------------------------------------|
+| `type`       | string | ✅        | One of: `http`, `gitlab`, `github`, `s3`, `git`, `gcs` |
+| `targetPath` | string | ✅        | Relative path under `mountPath` to store the file(s)   |
 
 ### HTTP Source
 
@@ -299,6 +338,77 @@ spec:
 
     # Number of parallel workers used to copy files
     workers: 2
+```
+
+### GCS Source
+
+| Field                 | Type      | Required | Description                                                                                                                                |
+|-----------------------|-----------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| `gcs.bucket`          | string    | ✅        | Name of the GCS bucket to fetch files from.                                                                                                |
+| `gcs.paths`           | string\[] | ✅        | List of object paths or directories to download. Paths ending with `/` are treated as directories; otherwise, only the file is downloaded. |
+| `gcs.credentialsFile` | string    | ❌        | Relative path (within `--resources`) to a GCP service account JSON file for accessing private buckets.                                     |
+| `gcs.workers`         | integer   | ❌        | Number of concurrent download workers. Defaults to 2.                                                                                      |
+
+#### Authenticating with a Private GCS Bucket
+
+To access a private GCS bucket, mount a service account key file using a Kubernetes Secret:
+
+**Step 1: Create the Secret**
+
+```bash
+kubectl create secret generic gcs-secret \
+  --from-file=credentials.json=/path/to/serviceAccountKeyfile.json -n controller
+```
+
+> The key name (`credentials.json`) must match the value used in `credentialsFile`.
+
+Refer to the [official GCP guide](https://cloud.google.com/iam/docs/creating-managing-service-account-keys) for
+generating service account keys.
+
+Required IAM Role:
+
+* **Storage Object Viewer** (`roles/storage.objectViewer`): Grants read access to bucket contents.
+
+**Step 2: Mount the Secret in Your Controller Pod**
+
+```yaml
+containers:
+  ...
+  args:
+    - "--mode=controller"
+    - "--image=ghcr.io/adamshannag/volare:v0.4.0"
+    - "--namespace=controller"
+    - "--mountpath=/mnt/checker"
+    - "--resources=/tmp/resources"
+
+  volumeMounts:
+    - name: controller-resources
+      mountPath: /tmp/resources/gcs
+      readOnly: true
+
+volumes:
+  - name: controller-resources
+    secret:
+      secretName: gcs-secret
+```
+
+**Nested paths are supported**
+If your secret is mounted to `/tmp/resources/gcs/credentials.json`, set `credentialsFile: gcs/credentials.json`.
+
+This enables clean resource structuring (e.g., grouping under `gcs/`, `us-west/`, `secrets/`, etc.).
+
+**Example Configuration**
+
+```yaml
+- type: gcs
+  targetPath: /gcs-data
+  gcs:
+    bucket: volare-bucket
+    paths:
+      - assets/logo.png
+      - data/config/
+    credentialsFile: gcs/credentials.json
+    workers: 3
 ```
 
 ### Global Options
