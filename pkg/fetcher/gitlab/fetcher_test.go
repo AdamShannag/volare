@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,17 +17,20 @@ import (
 	"github.com/AdamShannag/volare/pkg/types"
 )
 
-type MockDownloader struct {
-	Calls    int32
-	ErrAfter int32
+type mockDownloader struct {
+	calls    int32
+	lastURL  string
+	lastDest string
+	headers  map[string]string
+	err      error
 }
 
-func (m *MockDownloader) Download(_ context.Context, _ string, _ map[string]string, _ string) error {
-	c := atomic.AddInt32(&m.Calls, 1)
-	if m.ErrAfter == 0 || c > m.ErrAfter {
-		return errors.New("mock download error")
-	}
-	return nil
+func (m *mockDownloader) Download(_ context.Context, url string, headers map[string]string, dest string) error {
+	atomic.AddInt32(&m.calls, 1)
+	m.lastURL = url
+	m.lastDest = dest
+	m.headers = headers
+	return m.err
 }
 
 func TestFetcher_Fetch_Success(t *testing.T) {
@@ -38,7 +44,6 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/repository/tree") {
-			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(files)
 			return
 		}
@@ -46,10 +51,8 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	mockDownloader := &MockDownloader{ErrAfter: 999}
-	fetcher := gitlab.NewFetcher(mockDownloader,
-		gitlab.WithHTTPClient(apiServer.Client()),
-	)
+	md := &mockDownloader{}
+	fetcher := gitlab.NewFetcher(md, slog.New(slog.NewTextHandler(os.Stdout, nil)), gitlab.WithHTTPClient(apiServer.Client()))
 
 	src := types.Source{
 		Gitlab: &types.GitlabOptions{
@@ -60,14 +63,62 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 		},
 	}
 
-	tmpDir := t.TempDir()
-	err := fetcher.Fetch(context.Background(), tmpDir, src)
+	destDir := t.TempDir()
+	obj, err := fetcher.Fetch(context.Background(), destDir, src)
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
 
-	if calls := atomic.LoadInt32(&mockDownloader.Calls); calls != 2 {
-		t.Errorf("Expected 2 download calls, got %d", calls)
+	if len(obj.Objects) != 2 {
+		t.Fatalf("expected 2 objects, got %d", len(obj.Objects))
+	}
+
+	for _, o := range obj.Objects {
+		if err = obj.Processor(context.Background(), o); err != nil {
+			t.Fatalf("Processor failed: %v", err)
+		}
+	}
+
+	if md.calls != 2 {
+		t.Errorf("expected 2 downloads, got %d", md.calls)
+	}
+
+	if !strings.Contains(md.lastURL, "/repository/files/") {
+		t.Errorf("unexpected last URL: %s", md.lastURL)
+	}
+}
+
+func TestFetcher_Fetch_DirectFile(t *testing.T) {
+	t.Parallel()
+
+	md := &mockDownloader{}
+	fetcher := gitlab.NewFetcher(md, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
+	src := types.Source{
+		Gitlab: &types.GitlabOptions{
+			Host:    "https://gitlab.com",
+			Project: "proj",
+			Ref:     "main",
+			Paths:   []string{"myfile.txt"},
+		},
+	}
+
+	destDir := t.TempDir()
+	obj, err := fetcher.Fetch(context.Background(), destDir, src)
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
+	}
+
+	if len(obj.Objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(obj.Objects))
+	}
+
+	expectedDest := filepath.Join(destDir, "myfile.txt")
+	if err = obj.Processor(context.Background(), obj.Objects[0]); err != nil {
+		t.Fatalf("Processor failed: %v", err)
+	}
+	if md.lastDest != expectedDest {
+		t.Errorf("expected dest %s, got %s", expectedDest, md.lastDest)
 	}
 }
 
@@ -75,50 +126,72 @@ func TestFetcher_Fetch_ListFilesError(t *testing.T) {
 	t.Parallel()
 
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "server error", http.StatusInternalServerError)
 	}))
 	defer apiServer.Close()
 
-	mockDownloader := &MockDownloader{}
-	fetcher := gitlab.NewFetcher(mockDownloader,
-		gitlab.WithHTTPClient(apiServer.Client()),
-	)
+	md := &mockDownloader{}
+	fetcher := gitlab.NewFetcher(md, slog.New(slog.NewTextHandler(os.Stdout, nil)), gitlab.WithHTTPClient(apiServer.Client()))
 
 	src := types.Source{
 		Gitlab: &types.GitlabOptions{
 			Host:    apiServer.URL,
 			Project: "project",
 			Ref:     "main",
-			Paths:   []string{""},
+			Paths:   []string{"path"},
 		},
 	}
 
-	err := fetcher.Fetch(context.Background(), t.TempDir(), src)
-	if err == nil || !strings.Contains(err.Error(), "failed to list tree") {
-		t.Fatalf("Expected list tree error, got: %v", err)
+	_, err := fetcher.Fetch(context.Background(), t.TempDir(), src)
+	if err == nil || !strings.Contains(err.Error(), "status 500") {
+		t.Fatalf("expected status error, got %v", err)
 	}
 }
 
-func TestFetcher_Fetch_DownloadError(t *testing.T) {
+func TestFetcher_Fetch_InvalidJSON(t *testing.T) {
 	t.Parallel()
-
-	files := []gitlab.File{
-		{Name: "file1.txt", Type: "blob", Path: "file1.txt"},
-	}
 
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/repository/tree") {
-			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{invalid json}"))
+			return
+		}
+	}))
+	defer apiServer.Close()
+
+	md := &mockDownloader{}
+	fetcher := gitlab.NewFetcher(md, slog.New(slog.NewTextHandler(os.Stdout, nil)), gitlab.WithHTTPClient(apiServer.Client()))
+
+	src := types.Source{
+		Gitlab: &types.GitlabOptions{
+			Host:    apiServer.URL,
+			Project: "project",
+			Ref:     "main",
+			Paths:   []string{"path"},
+		},
+	}
+
+	_, err := fetcher.Fetch(context.Background(), t.TempDir(), src)
+	if err == nil || !strings.Contains(err.Error(), "failed to decode tree") {
+		t.Fatalf("expected decode error, got %v", err)
+	}
+}
+
+func TestFetcher_Processor_DownloadError(t *testing.T) {
+	t.Parallel()
+
+	files := []gitlab.File{{Name: "file1.txt", Type: "blob", Path: "file1.txt"}}
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/repository/tree") {
 			_ = json.NewEncoder(w).Encode(files)
 			return
 		}
 	}))
 	defer apiServer.Close()
 
-	mockDownloader := &MockDownloader{ErrAfter: 0}
-	fetcher := gitlab.NewFetcher(mockDownloader,
-		gitlab.WithHTTPClient(apiServer.Client()),
-	)
+	md := &mockDownloader{err: errors.New("mock download error")}
+	fetcher := gitlab.NewFetcher(md, slog.New(slog.NewTextHandler(os.Stdout, nil)), gitlab.WithHTTPClient(apiServer.Client()))
 
 	src := types.Source{
 		Gitlab: &types.GitlabOptions{
@@ -129,22 +202,12 @@ func TestFetcher_Fetch_DownloadError(t *testing.T) {
 		},
 	}
 
-	err := fetcher.Fetch(context.Background(), t.TempDir(), src)
-	if err == nil || !strings.Contains(err.Error(), "mock download error") {
-		t.Fatalf("Expected download error, got: %v", err)
+	obj, err := fetcher.Fetch(context.Background(), t.TempDir(), src)
+	if err != nil {
+		t.Fatalf("Fetch failed: %v", err)
 	}
-}
 
-func TestFetcher_Fetch_InvalidConfig(t *testing.T) {
-	t.Parallel()
-
-	mockDownloader := &MockDownloader{}
-	fetcher := gitlab.NewFetcher(mockDownloader)
-
-	src := types.Source{}
-
-	err := fetcher.Fetch(context.Background(), t.TempDir(), src)
-	if err == nil || !strings.Contains(err.Error(), "invalid source configuration") {
-		t.Fatalf("Expected invalid source configuration error, got: %v", err)
+	if err = obj.Processor(context.Background(), obj.Objects[0]); err == nil || !strings.Contains(err.Error(), "mock download error") {
+		t.Fatalf("expected mock download error, got %v", err)
 	}
 }

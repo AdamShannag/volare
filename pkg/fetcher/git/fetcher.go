@@ -3,24 +3,20 @@ package git
 import (
 	"context"
 	"fmt"
-	"github.com/AdamShannag/volare/pkg/cloner"
-	"github.com/AdamShannag/volare/pkg/fetcher"
-	"github.com/AdamShannag/volare/pkg/types"
-	"github.com/AdamShannag/volare/pkg/utils"
-	"github.com/AdamShannag/volare/pkg/workerpool"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/AdamShannag/volare/pkg/cloner"
+	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 )
 
 type Fetcher struct {
 	clonerFactory cloner.Factory
-}
-
-type job struct {
-	srcPath  string
-	destPath string
+	logger        *slog.Logger
 }
 
 type filePath struct {
@@ -28,26 +24,21 @@ type filePath struct {
 	Relative string
 }
 
-func NewFetcher(factory cloner.Factory) fetcher.Fetcher {
-	return &Fetcher{factory}
+func NewFetcher(factory cloner.Factory, logger *slog.Logger) fetcher.Fetcher {
+	return &Fetcher{
+		clonerFactory: factory,
+		logger:        logger,
+	}
 }
 
-func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) error {
-	if src.Git == nil {
-		return fmt.Errorf("invalid source configuration: 'git' options must be provided for source type 'git'")
-	}
-
+func (f *Fetcher) Fetch(_ context.Context, mountPath string, src types.Source) (*fetcher.Object, error) {
 	tempDir, err := os.MkdirTemp("", "gitclone-*")
 	if err != nil {
-		slog.Error("failed to create temp dir", "error", err)
-		return err
+		f.logger.Error("failed to create temp dir", "error", err)
+		return nil, err
 	}
-	defer func(path string) {
-		if rErr := os.RemoveAll(path); rErr != nil {
-			slog.Error("cleanup failed", "error", rErr)
-		}
-	}(tempDir)
 
+	f.logger.Info("cloning git repository", "url", src.Git.Url)
 	if err = f.clonerFactory.NewCloner(cloner.Options{
 		Path:     tempDir,
 		URL:      src.Git.Url,
@@ -56,70 +47,33 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		Ref:      src.Git.Ref,
 		Remote:   src.Git.Remote,
 	}).Clone(); err != nil {
-		return err
+		return nil, err
 	}
 
 	jobs, err := f.prepareJobs(tempDir, mountPath, src.Git.Paths)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	processor := func(ctx context.Context, j job) error {
-		return f.copy(j.srcPath, j.destPath)
-	}
+	return &fetcher.Object{
+		Processor: func(ctx context.Context, j types.ObjectToDownload) error {
+			if copyErr := f.copy(j.Path, j.ActualPath); copyErr != nil {
+				return copyErr
+			}
 
-	numOfWorkers := types.DefaultNumberOfWorkers
-	if src.Git.Workers != nil {
-		numOfWorkers = *src.Git.Workers
-	}
-
-	pool := workerpool.New(ctx, numOfWorkers, len(jobs), processor)
-	pool.Start()
-
-	for _, fl := range jobs {
-		if err = pool.Submit(fl); err != nil {
-			pool.Cancel()
-			pool.Stop()
-			return err
-		}
-	}
-
-	pool.Stop()
-
-	for err = range pool.Errors() {
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (f *Fetcher) prepareJobs(tempDir, mountPath string, paths []string) ([]job, error) {
-	var jobs []job
-
-	for _, p := range paths {
-		files, err := f.getFiles(tempDir, p)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, fl := range files {
-			jobs = append(jobs, job{
-				srcPath: fl.Absolute,
-				destPath: utils.ResolveTargetPath(mountPath, types.ObjectToDownload{
-					ActualPath: fl.Relative,
-					Path:       p,
-				}),
-			})
-		}
-	}
-
-	return jobs, nil
+			return nil
+		},
+		Objects: jobs,
+		Workers: src.Git.Workers,
+		Cleanup: func(ctx context.Context) error {
+			f.logger.Info("cleaning up git clone", slog.String("url", src.Git.Url))
+			return os.RemoveAll(tempDir)
+		},
+	}, nil
 }
 
 func (f *Fetcher) copy(src, dest string) error {
-	slog.Info("Copying file from repo to destination", "dest", dest)
+	f.logger.Info("copying file", "dest", dest)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory for %q: %w", dest, err)
 	}
@@ -131,7 +85,7 @@ func (f *Fetcher) copy(src, dest string) error {
 	defer func(inFile *os.File) {
 		cerr := inFile.Close()
 		if cerr != nil {
-			slog.Warn("error closing file", "error", cerr)
+			f.logger.Warn("error closing file", "error", cerr)
 		}
 	}(inFile)
 
@@ -141,7 +95,7 @@ func (f *Fetcher) copy(src, dest string) error {
 	}
 	defer func() {
 		if cerr := outFile.Close(); cerr != nil {
-			slog.Warn("error closing file", "error", cerr)
+			f.logger.Warn("error closing file", "error", cerr)
 		}
 	}()
 
@@ -151,7 +105,7 @@ func (f *Fetcher) copy(src, dest string) error {
 	return nil
 }
 
-func (f *Fetcher) getFiles(root, relBase string) ([]filePath, error) {
+func (f *Fetcher) list(root, relBase string) ([]filePath, error) {
 	var files []filePath
 
 	startPath := filepath.Join(root, relBase)
@@ -174,4 +128,27 @@ func (f *Fetcher) getFiles(root, relBase string) ([]filePath, error) {
 	})
 
 	return files, err
+}
+
+func (f *Fetcher) prepareJobs(tempDir, mountPath string, paths []string) ([]types.ObjectToDownload, error) {
+	var jobs []types.ObjectToDownload
+
+	for _, p := range paths {
+		files, err := f.list(tempDir, p)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, fl := range files {
+			jobs = append(jobs, types.ObjectToDownload{
+				Path: fl.Absolute,
+				ActualPath: utils.ResolveTargetPath(mountPath, types.ObjectToDownload{
+					ActualPath: fl.Relative,
+					Path:       p,
+				}),
+			})
+		}
+	}
+
+	return jobs, nil
 }

@@ -1,11 +1,12 @@
 package cloner
 
 import (
+	"log/slog"
+
 	"github.com/AdamShannag/volare/pkg/utils"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
-	"log/slog"
 )
 
 type Options struct {
@@ -75,7 +76,6 @@ func (g *gitCloner) Clone() error {
 		opts.RemoteName = g.options.Remote
 	}
 
-	slog.Info("cloning git repository", "url", g.options.URL, "path", g.options.Path)
 	_, err := g.plainCloner.PlainClone(g.options.Path, opts)
 	if err != nil {
 		slog.Error("failed to clone repository", "url", g.options.URL, "path", g.options.Path, "error", err)

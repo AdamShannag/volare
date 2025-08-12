@@ -76,12 +76,12 @@ spec:
     spec:
       serviceAccountName: vp-account
       containers:
-        - image: ghcr.io/adamshannag/volare:v0.4.0
+        - image: ghcr.io/adamshannag/volare:v1.0.0
           name: volarepopulator
           resources: { }
           args:
             - "--mode=controller"
-            - "--image=ghcr.io/adamshannag/volare:v0.4.0"
+            - "--image=ghcr.io/adamshannag/volare:v1.0.0"
             - "--namespace=controller"
             - "--mountpath=/mnt/checker"
 #            - "--resources=/tmp/resources"

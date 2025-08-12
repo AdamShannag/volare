@@ -2,7 +2,6 @@ package downloader_test
 
 import (
 	"context"
-	"github.com/AdamShannag/volare/pkg/downloader"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/AdamShannag/volare/pkg/downloader"
 )
 
 func TestHTTPDownloader_Download(t *testing.T) {

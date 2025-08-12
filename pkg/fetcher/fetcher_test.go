@@ -2,6 +2,7 @@ package fetcher_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/AdamShannag/volare/pkg/fetcher"
@@ -12,9 +13,9 @@ type MockFetcher struct {
 	called bool
 }
 
-func (m *MockFetcher) Fetch(_ context.Context, _ string, _ types.Source) error {
+func (m *MockFetcher) Fetch(_ context.Context, _ string, _ types.Source) (*fetcher.Object, error) {
 	m.called = true
-	return nil
+	return nil, nil
 }
 
 func TestRegistry_RegisterAndGet(t *testing.T) {
@@ -60,5 +61,50 @@ func TestRegistry_GetUnknownFetcher(t *testing.T) {
 	expected := "no fetcher registered for type unknown"
 	if err.Error() != expected {
 		t.Errorf("unexpected error message: got %q, want %q", err.Error(), expected)
+	}
+}
+
+func TestRegistry_RegisterAll(t *testing.T) {
+	reg := fetcher.NewRegistry()
+	mock := &MockFetcher{}
+
+	items := []fetcher.RegistryItem{
+		fetcher.NewRegistryItem("type1", mock),
+		fetcher.NewRegistryItem("type2", mock),
+	}
+
+	err := reg.RegisterAll(items)
+	if err != nil {
+		t.Fatalf("unexpected error from RegisterAll: %v", err)
+	}
+}
+
+func TestRegistry_RegisterAll_DuplicateError(t *testing.T) {
+	reg := fetcher.NewRegistry()
+	mock := &MockFetcher{}
+
+	items := []fetcher.RegistryItem{
+		fetcher.NewRegistryItem("type1", mock),
+		fetcher.NewRegistryItem("type1", mock),
+	}
+
+	err := reg.RegisterAll(items)
+	if err == nil {
+		t.Fatal("expected error for duplicate source type, got nil")
+	}
+	if !strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestNewRegistryItem(t *testing.T) {
+	mock := &MockFetcher{}
+	item := fetcher.NewRegistryItem("mytype", mock)
+
+	if item.SourceType != "mytype" {
+		t.Errorf("expected SourceType 'mytype', got %v", item.SourceType)
+	}
+	if item.Factory != mock {
+		t.Errorf("expected Factory %v, got %v", mock, item.Factory)
 	}
 }

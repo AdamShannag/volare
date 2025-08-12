@@ -3,6 +3,7 @@ package http_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,61 +47,75 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 		},
 	}
 
-	fetcher := httpfetcher.NewFetcher(mock)
+	fetcher := httpfetcher.NewFetcher(mock, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	err := fetcher.Fetch(context.Background(), tmpDir, src)
+	obj, err := fetcher.Fetch(context.Background(), tmpDir, src)
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("expected no error from Fetch, got %v", err)
 	}
 
-	expectedPath := filepath.Join(tmpDir, "file.txt")
-	_, err = os.Stat(expectedPath)
-	if err != nil {
-		t.Fatalf("expected file to exist at %s, got error: %v", expectedPath, err)
+	if len(obj.Objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(obj.Objects))
+	}
+
+	job := obj.Objects[0]
+	if job.ActualPath != src.Http.URI {
+		t.Errorf("unexpected ActualPath: got %s", job.ActualPath)
+	}
+	expectedFile := filepath.Join(tmpDir, "file.txt")
+	if job.Path != expectedFile {
+		t.Errorf("unexpected Path: got %s, want %s", job.Path, expectedFile)
+	}
+
+	if err = obj.Processor(context.Background(), job); err != nil {
+		t.Fatalf("processor returned error: %v", err)
+	}
+
+	if _, err = os.Stat(expectedFile); err != nil {
+		t.Fatalf("expected file at %s, got error: %v", expectedFile, err)
 	}
 }
 
-func TestFetcher_Fetch_InvalidConfig(t *testing.T) {
+func TestFetcher_Fetch_CustomFilePath(t *testing.T) {
 	t.Parallel()
 
-	fetcher := httpfetcher.NewFetcher(&MockDownloader{})
-	src := types.Source{Http: nil}
-
-	err := fetcher.Fetch(context.Background(), "/tmp", src)
-	if err == nil || err.Error() != "invalid source configuration: 'http' options must be provided for source type 'http'" {
-		t.Fatalf("expected configuration error, got: %v", err)
-	}
-}
-
-func TestFetcher_Fetch_MkdirFails(t *testing.T) {
-	t.Parallel()
-
-	tmpFile, err := os.CreateTemp("", "fakefile")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer func(name string) {
-		_ = os.Remove(name)
-	}(tmpFile.Name())
-
+	tmpDir := t.TempDir()
+	customFile := filepath.Join(tmpDir, "custom.txt")
 	src := types.Source{
 		Http: &types.HttpOptions{
 			URI: "https://example.com/file.txt",
 		},
 	}
 
-	mountPath := filepath.Join(tmpFile.Name(), "nested")
+	mock := &MockDownloader{
+		DownloadFunc: func(ctx context.Context, url string, headers map[string]string, dest string) error {
+			if dest != customFile {
+				t.Fatalf("expected dest %s, got %s", customFile, dest)
+			}
+			return nil
+		},
+	}
 
-	fetcher := httpfetcher.NewFetcher(&MockDownloader{})
-	err = fetcher.Fetch(context.Background(), mountPath, src)
-	if err == nil || !strings.Contains(err.Error(), "failed to create target directory") {
-		t.Fatalf("expected directory creation error, got: %v", err)
+	fetcher := httpfetcher.NewFetcher(mock, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
+	obj, err := fetcher.Fetch(context.Background(), customFile, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(obj.Objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(obj.Objects))
+	}
+
+	if obj.Objects[0].Path != customFile {
+		t.Errorf("expected Path %s, got %s", customFile, obj.Objects[0].Path)
 	}
 }
 
-func TestFetcher_Fetch_DownloadFails(t *testing.T) {
+func TestFetcher_Fetch_ProcessorError(t *testing.T) {
 	t.Parallel()
 
+	tmpDir := t.TempDir()
 	src := types.Source{
 		Http: &types.HttpOptions{
 			URI: "https://example.com/file.txt",
@@ -113,11 +128,15 @@ func TestFetcher_Fetch_DownloadFails(t *testing.T) {
 		},
 	}
 
-	tmpDir := t.TempDir()
-	fetcher := httpfetcher.NewFetcher(mock)
+	fetcher := httpfetcher.NewFetcher(mock, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+	obj, err := fetcher.Fetch(context.Background(), tmpDir, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	err := fetcher.Fetch(context.Background(), tmpDir, src)
-	if err == nil || err.Error() != `failed to download "https://example.com/file.txt": download error` {
-		t.Fatalf("expected wrapped download error, got: %v", err)
+	job := obj.Objects[0]
+	err = obj.Processor(context.Background(), job)
+	if err == nil || !strings.Contains(err.Error(), "download error") {
+		t.Fatalf("expected download error, got: %v", err)
 	}
 }

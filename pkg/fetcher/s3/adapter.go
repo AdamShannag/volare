@@ -2,8 +2,9 @@ package s3
 
 import (
 	"context"
-	"github.com/minio/minio-go/v7"
 	"io"
+
+	"github.com/minio/minio-go/v7"
 )
 
 type minioAdapter struct {

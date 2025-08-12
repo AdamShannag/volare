@@ -3,10 +3,11 @@ package workerpool_test
 import (
 	"context"
 	"errors"
-	"github.com/AdamShannag/volare/pkg/workerpool"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/AdamShannag/volare/pkg/workerpool"
 )
 
 func TestWorkerPoolProcessesJobs(t *testing.T) {
@@ -137,5 +138,96 @@ func TestWorkerPoolMultipleErrors(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("expected 3 errors, got %d", count)
+	}
+}
+
+func TestRunPool_Success(t *testing.T) {
+	t.Parallel()
+
+	var processed int32
+	items := []int{1, 2, 3, 4, 5}
+	workers := 3
+
+	err := workerpool.RunPool(context.Background(), items, &workers, func(ctx context.Context, i int) error {
+		atomic.AddInt32(&processed, 1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&processed); got != int32(len(items)) {
+		t.Fatalf("expected %d processed, got %d", len(items), got)
+	}
+}
+
+func TestRunPool_ProcessorError(t *testing.T) {
+	t.Parallel()
+
+	items := []string{"a", "b", "c"}
+	workers := 2
+
+	err := workerpool.RunPool(context.Background(), items, &workers, func(ctx context.Context, s string) error {
+		if s == "b" {
+			return errors.New("processor failure")
+		}
+		return nil
+	})
+	if err == nil || err.Error() != "processing error: processor failure" {
+		t.Fatalf("expected processor failure, got %v", err)
+	}
+}
+
+func TestRunPool_EmptyItems(t *testing.T) {
+	t.Parallel()
+
+	err := workerpool.RunPool(context.Background(), []int{}, nil, func(ctx context.Context, i int) error {
+		t.Fatal("processor should not be called")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected nil error on empty items, got %v", err)
+	}
+}
+
+func TestRunPool_ContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	items := []int{1, 2, 3}
+	workers := 2
+
+	var processed int32
+	_ = workerpool.RunPool(ctx, items, &workers, func(ctx context.Context, i int) error {
+		if i == 2 {
+			cancel()
+			time.Sleep(10 * time.Millisecond)
+		}
+		atomic.AddInt32(&processed, 1)
+		return nil
+	})
+
+	if got := atomic.LoadInt32(&processed); got == 0 {
+		t.Fatal("expected some items processed before cancel")
+	}
+}
+
+func TestRunPool_NilWorkers_UsesDefault(t *testing.T) {
+	t.Parallel()
+
+	var processed int32
+	items := []int{1, 2}
+
+	err := workerpool.RunPool(context.Background(), items, nil, func(ctx context.Context, i int) error {
+		atomic.AddInt32(&processed, 1)
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&processed); got != int32(len(items)) {
+		t.Fatalf("expected %d processed, got %d", len(items), got)
 	}
 }

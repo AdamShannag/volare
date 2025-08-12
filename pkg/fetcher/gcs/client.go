@@ -1,15 +1,16 @@
 package gcs
 
 import (
-	"cloud.google.com/go/storage"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
+
+	"cloud.google.com/go/storage"
 	"github.com/AdamShannag/volare/pkg/types"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	"io"
-	"path/filepath"
 )
 
 type ObjectInfo struct {

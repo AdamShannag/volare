@@ -3,12 +3,13 @@ package utils_test
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/AdamShannag/volare/pkg/types"
-	"github.com/AdamShannag/volare/pkg/utils"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 )
 
 func TestResolveTargetPath(t *testing.T) {

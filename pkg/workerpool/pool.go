@@ -2,8 +2,11 @@ package workerpool
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/AdamShannag/volare/pkg/types"
 )
 
 type JobFunc[T any] func(ctx context.Context, job T) error
@@ -78,4 +81,36 @@ func (p *WorkerPool[T]) Errors() <-chan error {
 
 func (p *WorkerPool[T]) Cancel() {
 	p.cancel()
+}
+
+func RunPool[T any](ctx context.Context, items []T, workers *int, processor func(context.Context, T) error) error {
+	if len(items) == 0 || processor == nil {
+		return nil
+	}
+
+	numWorkers := types.DefaultNumberOfWorkers
+	if workers != nil {
+		numWorkers = *workers
+	}
+
+	pool := New(ctx, numWorkers, len(items), processor)
+	pool.Start()
+
+	for _, item := range items {
+		if err := pool.Submit(item); err != nil {
+			pool.Cancel()
+			pool.Stop()
+			return fmt.Errorf("submit item: %w", err)
+		}
+	}
+
+	pool.Stop()
+
+	for err := range pool.Errors() {
+		if err != nil {
+			return fmt.Errorf("processing error: %w", err)
+		}
+	}
+
+	return nil
 }

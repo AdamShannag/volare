@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/AdamShannag/volare/pkg/downloader"
-	"github.com/AdamShannag/volare/pkg/fetcher"
-	"github.com/AdamShannag/volare/pkg/types"
-	"github.com/AdamShannag/volare/pkg/utils"
-	"github.com/AdamShannag/volare/pkg/workerpool"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/AdamShannag/volare/pkg/downloader"
+	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 )
 
 type Option func(*Fetcher)
@@ -21,6 +21,7 @@ type Fetcher struct {
 	client     *http.Client
 	downloader downloader.Downloader
 	baseURL    string
+	logger     *slog.Logger
 }
 
 func WithHTTPClient(client *http.Client) Option {
@@ -35,15 +36,17 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
-func NewFetcher(downloader downloader.Downloader, opts ...Option) fetcher.Fetcher {
+func NewFetcher(downloader downloader.Downloader, logger *slog.Logger, opts ...Option) fetcher.Fetcher {
 	h := &Fetcher{
-		client:  http.DefaultClient,
-		baseURL: "https://api.github.com",
+		client:     http.DefaultClient,
+		downloader: downloader,
+		baseURL:    "https://api.github.com",
+		logger:     logger,
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
-	h.downloader = downloader
+
 	return h
 }
 
@@ -56,11 +59,7 @@ type githubItem struct {
 	Type string `json:"type"`
 }
 
-func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) error {
-	if src.GitHub == nil {
-		return fmt.Errorf("invalid source configuration: 'github' options must be provided for source type 'github'")
-	}
-
+func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) (*fetcher.Object, error) {
 	var filesToDownload []types.ObjectToDownload
 	for _, p := range src.GitHub.Paths {
 		if utils.IsFile(p) {
@@ -71,9 +70,9 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 			continue
 		}
 
-		files, err := f.listFiles(ctx, *src.GitHub, p)
+		files, err := f.list(ctx, *src.GitHub, p)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, fl := range files {
@@ -86,50 +85,22 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		}
 	}
 
-	type job struct {
-		file types.ObjectToDownload
-	}
-
-	processor := func(ctx context.Context, j job) error {
-		return f.downloadBlob(ctx, mountPath, j.file, *src.GitHub)
-	}
-
-	numOfWorkers := types.DefaultNumberOfWorkers
-	if src.GitHub.Workers != nil {
-		numOfWorkers = *src.GitHub.Workers
-	}
-
-	pool := workerpool.New(ctx, numOfWorkers, len(filesToDownload), processor)
-	pool.Start()
-
-	for _, fl := range filesToDownload {
-		if err := pool.Submit(job{file: fl}); err != nil {
-			pool.Cancel()
-			pool.Stop()
-			return err
-		}
-	}
-
-	pool.Stop()
-
-	for err := range pool.Errors() {
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return &fetcher.Object{
+		Processor: func(ctx context.Context, j types.ObjectToDownload) error {
+			return f.download(ctx, mountPath, j, *src.GitHub)
+		},
+		Objects: filesToDownload,
+		Workers: src.GitHub.Workers,
+	}, nil
 }
 
-func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions, path string) ([]githubItem, error) {
+func (f *Fetcher) list(ctx context.Context, ghOpts types.GitHubOptions, path string) ([]githubItem, error) {
 	apiURL := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1",
 		f.baseURL,
 		url.PathEscape(ghOpts.Owner),
 		url.PathEscape(ghOpts.Repo),
 		url.PathEscape(ghOpts.Ref),
 	)
-
-	slog.Info("listing files from github", slog.String("url", apiURL))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -145,7 +116,7 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions, pat
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
-			slog.Warn("error closing response body", "error", cerr)
+			f.logger.Warn("error closing response body", "error", cerr)
 		}
 	}()
 
@@ -172,7 +143,7 @@ func (f *Fetcher) listFiles(ctx context.Context, ghOpts types.GitHubOptions, pat
 	return filtered, nil
 }
 
-func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types.ObjectToDownload, ghOpts types.GitHubOptions) error {
+func (f *Fetcher) download(ctx context.Context, mountPath string, file types.ObjectToDownload, ghOpts types.GitHubOptions) error {
 	rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s",
 		ghOpts.Owner,
 		ghOpts.Repo,
@@ -185,5 +156,6 @@ func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types
 		headers["Authorization"] = "Bearer " + utils.FromEnv(ghOpts.Token)
 	}
 
+	f.logger.Info("downloading file", slog.String("project", fmt.Sprintf("%s/%s", ghOpts.Owner, ghOpts.Repo)), slog.String("file", file.ActualPath))
 	return f.downloader.Download(ctx, rawURL, headers, utils.ResolveTargetPath(mountPath, file))
 }

@@ -3,6 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
+	"log/slog"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/AdamShannag/volare/internal/populator"
 	"github.com/AdamShannag/volare/pkg/cloner"
 	"github.com/AdamShannag/volare/pkg/downloader"
@@ -15,11 +21,6 @@ import (
 	"github.com/AdamShannag/volare/pkg/fetcher/s3"
 	"github.com/AdamShannag/volare/pkg/types"
 	"github.com/AdamShannag/volare/pkg/utils"
-	"log"
-	"log/slog"
-	"net/http"
-	"os"
-	"time"
 
 	"github.com/kubernetes-csi/lib-volume-populator/populator-machinery"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -72,12 +73,15 @@ func main() {
 
 	flag.Parse()
 
-	slog.SetDefault(slog.New(
+	logger := slog.New(
 		tint.NewHandler(os.Stderr, &tint.Options{
+			AddSource:  true,
 			Level:      slog.LevelInfo,
 			TimeFormat: time.DateTime,
 		}),
-	))
+	)
+
+	slog.SetDefault(logger)
 
 	switch mode {
 	case "controller":
@@ -127,38 +131,15 @@ func main() {
 		httpDownloader := downloader.NewHTTPDownloader(downloader.WithHTTPClient(httpClient))
 
 		registry := fetcher.NewRegistry()
-		err = registry.Register(types.SourceTypeHTTP, httpf.NewFetcher(httpDownloader))
-		if err != nil {
-			log.Fatal(err)
-		}
+		err = registry.RegisterAll([]fetcher.RegistryItem{
+			fetcher.NewRegistryItem(types.SourceTypeHTTP, httpf.NewFetcher(httpDownloader, WithLogger(logger, types.SourceTypeHTTP))),
+			fetcher.NewRegistryItem(types.SourceTypeGITLAB, gitlab.NewFetcher(httpDownloader, WithLogger(logger, types.SourceTypeGITLAB), gitlab.WithHTTPClient(httpClient))),
+			fetcher.NewRegistryItem(types.SourceTypeGITHUB, github.NewFetcher(httpDownloader, WithLogger(logger, types.SourceTypeGITHUB), github.WithHTTPClient(httpClient))),
+			fetcher.NewRegistryItem(types.SourceTypeS3, s3.NewFetcher(s3.MinioClientFactory, WithLogger(logger, types.SourceTypeS3))),
+			fetcher.NewRegistryItem(types.SourceTypeGIT, git.NewFetcher(cloner.NewGitClonerFactory(), WithLogger(logger, types.SourceTypeGIT))),
+			fetcher.NewRegistryItem(types.SourceTypeGCS, gcs.NewFetcher(gcs.GCSClientFactory, WithLogger(logger, types.SourceTypeGCS))),
+		})
 
-		err = registry.Register(types.SourceTypeGITLAB, gitlab.NewFetcher(
-			httpDownloader,
-			gitlab.WithHTTPClient(httpClient),
-		))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = registry.Register(types.SourceTypeGITHUB, github.NewFetcher(
-			httpDownloader,
-			github.WithHTTPClient(httpClient),
-		))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = registry.Register(types.SourceTypeS3, s3.NewFetcher(s3.MinioClientFactory))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = registry.Register(types.SourceTypeGIT, git.NewFetcher(cloner.NewGitClonerFactory()))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = registry.Register(types.SourceTypeGCS, gcs.NewFetcher(gcs.GCSClientFactory))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -174,4 +155,8 @@ func main() {
 	default:
 		log.Fatalf("mode [%q] is not supported", mode)
 	}
+}
+
+func WithLogger(logger *slog.Logger, sourceType types.SourceType) *slog.Logger {
+	return logger.With("source", sourceType)
 }

@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/AdamShannag/volare/pkg/downloader"
-	"github.com/AdamShannag/volare/pkg/fetcher"
-	"github.com/AdamShannag/volare/pkg/types"
-	"github.com/AdamShannag/volare/pkg/utils"
-	"github.com/AdamShannag/volare/pkg/workerpool"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/AdamShannag/volare/pkg/downloader"
+	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/types"
+	"github.com/AdamShannag/volare/pkg/utils"
 )
 
 const gitlabTokenHeader = "PRIVATE-TOKEN"
@@ -22,6 +22,7 @@ type Option func(*Fetcher)
 type Fetcher struct {
 	client     *http.Client
 	downloader downloader.Downloader
+	logger     *slog.Logger
 }
 
 type File struct {
@@ -37,21 +38,20 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-func NewFetcher(downloader downloader.Downloader, opts ...Option) fetcher.Fetcher {
+func NewFetcher(downloader downloader.Downloader, logger *slog.Logger, opts ...Option) fetcher.Fetcher {
 	h := &Fetcher{
-		client: http.DefaultClient,
+		client:     http.DefaultClient,
+		downloader: downloader,
+		logger:     logger,
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
-	h.downloader = downloader
+
 	return h
 }
-func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) error {
-	if src.Gitlab == nil {
-		return fmt.Errorf("invalid source configuration: 'gitlab' options must be provided for source type 'gitlab'")
-	}
 
+func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source) (*fetcher.Object, error) {
 	var filesToDownload []types.ObjectToDownload
 	for _, p := range src.Gitlab.Paths {
 		if utils.IsFile(p) {
@@ -62,9 +62,9 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 			continue
 		}
 
-		files, err := f.listFiles(ctx, *src.Gitlab, p)
+		files, err := f.list(ctx, *src.Gitlab, p)
 		if err != nil {
-			return fmt.Errorf("listing GitLab path %q: %w", p, err)
+			return nil, fmt.Errorf("listing GitLab path %q: %w", p, err)
 		}
 
 		for _, fl := range files {
@@ -77,50 +77,22 @@ func (f *Fetcher) Fetch(ctx context.Context, mountPath string, src types.Source)
 		}
 	}
 
-	type job struct {
-		file types.ObjectToDownload
-	}
-
-	processor := func(ctx context.Context, j job) error {
-		return f.downloadBlob(ctx, mountPath, j.file, *src.Gitlab)
-	}
-
-	numOfWorkers := types.DefaultNumberOfWorkers
-	if src.Gitlab.Workers != nil {
-		numOfWorkers = *src.Gitlab.Workers
-	}
-
-	pool := workerpool.New(ctx, numOfWorkers, len(filesToDownload), processor)
-	pool.Start()
-
-	for _, fl := range filesToDownload {
-		if err := pool.Submit(job{file: fl}); err != nil {
-			pool.Cancel()
-			pool.Stop()
-			return err
-		}
-	}
-
-	pool.Stop()
-
-	for err := range pool.Errors() {
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return &fetcher.Object{
+		Processor: func(ctx context.Context, j types.ObjectToDownload) error {
+			return f.download(ctx, mountPath, j, *src.Gitlab)
+		},
+		Objects: filesToDownload,
+		Workers: src.Gitlab.Workers,
+	}, nil
 }
 
-func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions, path string) ([]File, error) {
+func (f *Fetcher) list(ctx context.Context, gitlabOpts types.GitlabOptions, path string) ([]File, error) {
 	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/tree?path=%s&ref=%s&recursive=true",
 		gitlabOpts.Host,
 		url.PathEscape(gitlabOpts.Project),
 		url.QueryEscape(path),
 		url.QueryEscape(gitlabOpts.Ref),
 	)
-
-	slog.Info("listing files from gitlab", slog.String("url", apiURL))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
@@ -136,7 +108,7 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions,
 	}
 	defer func() {
 		if err = resp.Body.Close(); err != nil {
-			slog.Warn("error closing response body", "error", err)
+			f.logger.Warn("error closing response body", "error", err)
 		}
 	}()
 
@@ -152,7 +124,7 @@ func (f *Fetcher) listFiles(ctx context.Context, gitlabOpts types.GitlabOptions,
 	return files, nil
 }
 
-func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types.ObjectToDownload, src types.GitlabOptions) error {
+func (f *Fetcher) download(ctx context.Context, mountPath string, file types.ObjectToDownload, src types.GitlabOptions) error {
 	fileURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/files/%s/raw?ref=%s",
 		src.Host,
 		url.PathEscape(src.Project),
@@ -160,12 +132,11 @@ func (f *Fetcher) downloadBlob(ctx context.Context, mountPath string, file types
 		url.QueryEscape(src.Ref),
 	)
 
-	slog.Info("downloading file from url", slog.String("url", fileURL))
-
 	headers := map[string]string{}
 	if src.Token != "" {
 		headers[gitlabTokenHeader] = utils.FromEnv(src.Token)
 	}
 
+	f.logger.Info("downloading file", slog.String("project", src.Project), slog.String("file", file.ActualPath))
 	return f.downloader.Download(ctx, fileURL, headers, utils.ResolveTargetPath(mountPath, file))
 }

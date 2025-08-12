@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -26,7 +28,7 @@ func (m *mockClient) GetObject(ctx context.Context, bucket, object string, opts 
 	return m.getObjectFunc(ctx, bucket, object, opts)
 }
 
-func TestFetcher_Fetch_Success(t *testing.T) {
+func TestFetcher_FetchAndProcess_Success(t *testing.T) {
 	t.Parallel()
 
 	objects := []minio.ObjectInfo{
@@ -53,7 +55,7 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 
 	fetcher := s3.NewFetcher(func(opts types.S3Options) (s3.Client, error) {
 		return mock, nil
-	})
+	}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
 	src := types.Source{
 		S3: &types.S3Options{
@@ -63,9 +65,19 @@ func TestFetcher_Fetch_Success(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	err := fetcher.Fetch(context.Background(), tmpDir, src)
+
+	obj, err := fetcher.Fetch(context.Background(), tmpDir, src)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if obj == nil {
+		t.Fatal("expected fetcher.Object, got nil")
+	}
+
+	for _, job := range obj.Objects {
+		if err = obj.Processor(context.Background(), job); err != nil {
+			t.Fatalf("Processor failed: %v", err)
+		}
 	}
 
 	if got := atomic.LoadInt32(&calls); got != 2 {
@@ -91,12 +103,12 @@ func TestFetcher_Fetch_ListObjectsError(t *testing.T) {
 
 	fetcher := s3.NewFetcher(func(opts types.S3Options) (s3.Client, error) {
 		return mock, nil
-	})
+	}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	err := fetcher.Fetch(context.Background(), t.TempDir(), types.Source{
+	_, err := fetcher.Fetch(context.Background(), t.TempDir(), types.Source{
 		S3: &types.S3Options{
 			Bucket: "bucket",
-			Paths:  []string{"/bad"},
+			Paths:  []string{"bad"},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to list objects") {
@@ -104,7 +116,7 @@ func TestFetcher_Fetch_ListObjectsError(t *testing.T) {
 	}
 }
 
-func TestFetcher_Fetch_DownloadError(t *testing.T) {
+func TestFetcher_FetchAndProcess_DownloadError(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockClient{
@@ -121,26 +133,19 @@ func TestFetcher_Fetch_DownloadError(t *testing.T) {
 
 	fetcher := s3.NewFetcher(func(opts types.S3Options) (s3.Client, error) {
 		return mock, nil
-	})
+	}, slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	err := fetcher.Fetch(context.Background(), t.TempDir(), types.Source{
+	obj, err := fetcher.Fetch(context.Background(), t.TempDir(), types.Source{
 		S3: &types.S3Options{
 			Bucket: "bucket",
 			Paths:  []string{"a"},
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "download error") {
-		t.Fatalf("expected download error, got %v", err)
+	if err != nil {
+		t.Fatalf("unexpected fetch error: %v", err)
 	}
-}
 
-func TestFetcher_Fetch_InvalidConfig(t *testing.T) {
-	t.Parallel()
-
-	fetcher := s3.NewFetcher(nil)
-
-	err := fetcher.Fetch(context.Background(), t.TempDir(), types.Source{})
-	if err == nil || !strings.Contains(err.Error(), "invalid source configuration") {
-		t.Fatalf("expected invalid source config error, got %v", err)
+	if err = obj.Processor(context.Background(), obj.Objects[0]); err == nil || !strings.Contains(err.Error(), "download error") {
+		t.Fatalf("expected download error, got %v", err)
 	}
 }

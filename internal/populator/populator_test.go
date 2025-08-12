@@ -5,16 +5,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/AdamShannag/volare/internal/populator"
-	"github.com/AdamShannag/volare/pkg/fetcher"
-	"github.com/AdamShannag/volare/pkg/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/AdamShannag/volare/internal/populator"
+	"github.com/AdamShannag/volare/pkg/fetcher"
+	"github.com/AdamShannag/volare/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type mockFetcher struct {
@@ -24,15 +25,15 @@ type mockFetcher struct {
 	FetchErr error
 }
 
-func (m *mockFetcher) Fetch(_ context.Context, _ string, src types.Source) error {
+func (m *mockFetcher) Fetch(_ context.Context, _ string, src types.Source) (*fetcher.Object, error) {
 	m.mu.Lock()
 	m.Called = append(m.Called, src)
 	m.mu.Unlock()
 
 	if m.Fail {
-		return m.FetchErr
+		return nil, m.FetchErr
 	}
-	return nil
+	return &fetcher.Object{}, nil
 }
 
 func TestPopulate_Success(t *testing.T) {

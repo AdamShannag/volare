@@ -4,11 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/AdamShannag/volare/pkg/types"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/AdamShannag/volare/pkg/types"
 )
 
 func ResolveTargetPath(mountPath string, file types.ObjectToDownload) string {

@@ -174,7 +174,7 @@ containers:
   ...
   args:
     - "--mode=controller"
-    - "--image=ghcr.io/adamshannag/volare:v0.4.0"
+    - "--image=ghcr.io/adamshannag/volare:v1.0.0"
     - "--namespace=controller"
     - "--mountpath=/mnt/checker"
     - "--resources=/tmp/resources"
@@ -376,7 +376,7 @@ containers:
   ...
   args:
     - "--mode=controller"
-    - "--image=ghcr.io/adamshannag/volare:v0.4.0"
+    - "--image=ghcr.io/adamshannag/volare:v1.0.0"
     - "--namespace=controller"
     - "--mountpath=/mnt/checker"
     - "--resources=/tmp/resources"

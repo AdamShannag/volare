@@ -2,9 +2,10 @@ package utils_test
 
 import (
 	"encoding/json"
-	"github.com/AdamShannag/volare/pkg/utils"
 	"os"
 	"testing"
+
+	"github.com/AdamShannag/volare/pkg/utils"
 )
 
 func TestFromEnv(t *testing.T) {
